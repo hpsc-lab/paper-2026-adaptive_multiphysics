@@ -6,7 +6,7 @@ Coupled one polytropic Euler system with one Euler system.
 """
 
 ###############################################################################
-# semidiscretization of the compressible Euler multicomponent equations
+# Semidiscretization of the compressible Euler multicomponent equations.
 gamma1 = 2.0
 kappa1 = 1.0
 equations1 = PolytropicEulerEquations2D(gamma1, kappa1)
@@ -36,7 +36,7 @@ function initial_condition_constant(x, t, equations::CompressibleEulerEquations2
     return prim2cons(SVector(rho, v1, v2, p), equations)
 end
 
-# set up the parent mesh
+# Set up the parent mesh.
 cells_per_dimension_parent = (64, 32)
 coordinates_min = (-2.0, -1.0)
 coordinates_max = ( 2.0,  1.0)
