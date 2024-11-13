@@ -55,11 +55,14 @@ ode = semidiscretize(semi, tspan)
 # and resets the timers.
 summary_callback = SummaryCallback()
 
+# Show that the simulation is stil running.
+alive_callback = AliveCallback(alive_interval=100)
+
 # The SaveSolutionCallback allows to save the solution to a file in regular intervals.
 save_solution = SaveSolutionCallback(interval=100,
                                      save_initial_solution=true,
                                      save_final_solution=true,
-                                     output_directory="out_coupled",
+                                     output_directory="out_mhd_only",
                                      solution_variables=cons2prim)
 
 # Define the CFL condition.
@@ -73,6 +76,7 @@ glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl, semi_indices= [1])
 
 # Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver.
 callbacks = CallbackSet(summary_callback,
+                        alive_callback,
                         save_solution,
                         stepsize_callback,
                         glm_speed_callback,

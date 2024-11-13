@@ -433,9 +433,13 @@ stepsize_callback = StepsizeCallback(cfl=cfl)
 # The Generalized Lagrange Method divergence cleans the magnetic field.
 glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl, semi_indices=[5])
 
+# Show that the simulation is stil running.
+alive_callback = AliveCallback(alive_interval=100)
+
 # Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver.
 callbacks = CallbackSet(summary_callback,
                         save_solution,
+                        alive_callback,
                         ams_callback,
                         stepsize_callback,
                         glm_speed_callback,
