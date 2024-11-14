@@ -36,8 +36,8 @@ def perform_interpolation(field):
 
 
 # Define the time index to plot
-#t_idx = 0
-t_idx = 125
+t_idx = 0
+#t_idx = 125
 
 # Read the mesh files.
 #f = h5py.File('out/mesh_1_000000.h5')

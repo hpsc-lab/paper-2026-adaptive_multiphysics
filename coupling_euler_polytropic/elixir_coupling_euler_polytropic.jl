@@ -81,7 +81,6 @@ initial_condition2 = initial_condition_constant
 solver2 = DGSEM(polydeg = 3, surface_flux = flux_hll,
                 volume_integral = VolumeIntegralWeakForm())
 
-# coupling_function2 = (x, u, equations_other, equations_own) -> SVector(u[1], u[2], u[3], u[1]^equations_own.gamma)
 coupling_function2 = (x, u, equations_other, equations_own) -> SVector(u[1], u[2], u[3], u[1]^equations_own.gamma * equations_own.inv_gamma_minus_one + 0.5 * (u[2]^2/u[1] + u[3]^2/u[1]))
 boundary_conditions2 = (
                        x_neg=BoundaryConditionCoupled(1, (:end, :i_forward), Float64, coupling_function2),
@@ -98,42 +97,48 @@ semi = SemidiscretizationCoupled(semi1, semi2)
 ###############################################################################
 # ODE solvers, callbacks etc.
 
+# Create ODE problem with time span from 0.0 to 3.0.
 tspan = (0.0, 3.0)
 ode = semidiscretize(semi, tspan)
 
+# At the beginning of the main loop, the SummaryCallback prints a summary of the simulation setup
+# and resets the timers.
 summary_callback = SummaryCallback()
 
-analysis_interval = 100
-
+# Analyze the numerica solution.
 analysis_callback1 = AnalysisCallback(semi1, interval=100)
 analysis_callback2 = AnalysisCallback(semi2, interval=100)
 analysis_callback = AnalysisCallbackCoupled(semi, analysis_callback1, analysis_callback2)
 
-alive_callback = AliveCallback(analysis_interval=analysis_interval)
-
+# The SaveSolutionCallback allows to save the solution to a file in regular intervals.
 save_solution = SaveSolutionCallback(interval=5,
                                      save_initial_solution=true,
                                      save_final_solution=true,
                                      solution_variables=cons2prim)
 
-cfl = 0.1
-
 # The StepsizeCallback handles the re-calculcation of the maximum Δt after each time step
 stepsize_callback = StepsizeCallback(cfl=1.0)
 
+# Show that the simulation is stil running.
+alive_callback = AliveCallback(alive_interval=100)
+
+# Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver.
 callbacks = CallbackSet(summary_callback,
-#                         analysis_callback,
-                        alive_callback,
                         save_solution,
+                        alive_callback,
+                        analysis_callback,
                         stepsize_callback,
                         )
 
 
 ###############################################################################
-# run the simulation
+# Run the simulation.
 
+# OrdinaryDiffEq's `solve` method evolves the solution in time and executes the passed callback.
 sol = solve(ode, CarpenterKennedy2N54(williamson_condition=false),
             dt=1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
             save_everystep=false, callback=callbacks);
-summary_callback() # print the timer summary
+
+# Print the timer summary.
+summary_callback()
 

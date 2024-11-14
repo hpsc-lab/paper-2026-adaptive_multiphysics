@@ -2,6 +2,11 @@ using OrdinaryDiffEq
 using Trixi
 
 """
+Adaptive coupling between an MHD system and an Euler system.
+"""
+
+
+"""
 Determine if and how we should perform adaptive omdel selection (AMS).
 
 # Arguments
