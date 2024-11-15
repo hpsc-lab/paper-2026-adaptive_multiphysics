@@ -1,11 +1,17 @@
 using OrdinaryDiffEq
 using Trixi
 
+"""
+Coupled array of polytropic/isothermal systems.
+"""
+
+
+# Define the grid size.
 nx = 3
 ny = 3
 
 ###############################################################################
-# semidiscretization of the compressible Euler multicomponent equations
+# Semidiscretization of the polytropic Euler equations.
 equations = Array{PolytropicEulerEquations2D}(undef, (nx, ny))
 for sx in 1:nx
     for sy in 1:ny
@@ -13,13 +19,13 @@ for sx in 1:nx
         kappa = 1.0
         if sx == 2 && sy == 2
             gamma = 1.0
-#            gamma = 2.0
         end
         equations[sx, sy] = PolytropicEulerEquations2D(gamma, kappa)
     end
 end
 
 
+# Initial condition of the form of a wave.
 function initial_condition_wave(x, t, equations::PolytropicEulerEquations2D)
   gamma = equations.gamma
   kappa = equations.kappa
@@ -35,21 +41,24 @@ function initial_condition_wave(x, t, equations::PolytropicEulerEquations2D)
   return prim2cons(SVector(rho, v1, v2), equations)
 end
 
-# general setup
+# Define the solver.
 volume_flux = flux_winters_etal
 solver = DGSEM(polydeg=3, surface_flux=flux_hll,
                volume_integral=VolumeIntegralFluxDifferencing(volume_flux))
 
+# Define the domain.
 cells_per_dimension = (48, 48)
 coordinates_min = (-1.5, -1.5)
 coordinates_max = ( 1.5,  1.5)
 parent_mesh = StructuredMesh(cells_per_dimension, coordinates_min, coordinates_max)
 
+# Specify the coupling functions.
 coupling_function_oo = (x, u, equations_other, equations_own) -> u
 coupling_function_oi = (x, u, equations_other, equations_own) -> u
 coupling_function_io = (x, u, equations_other, equations_own) -> u
 coupling_function_ii = (x, u, equations_other, equations_own) -> u
 
+# Define every mesh and semidiscretization in the array of coupled systems.
 semis = Array{SemidiscretizationHyperbolic}(undef, (nx, ny))
 meshes = Array{StructuredMeshView}(undef, (nx, ny))
 for sx in 1:nx
@@ -105,10 +114,6 @@ for sx in 1:nx
                                x_pos=BoundaryConditionCoupled(right_idx, (:begin, :i_forward), Float64, coupling_function2),
                                y_neg=BoundaryConditionCoupled(bottom_idx, (:i_forward, :end), Float64, coupling_function3),
                                y_pos=BoundaryConditionCoupled(top_idx, (:i_forward, :begin), Float64, coupling_function4),
-#                                x_neg=boundary_condition_periodic,
-#                                x_pos=boundary_condition_periodic,
-#                                y_neg=boundary_condition_periodic,
-#                                y_pos=boundary_condition_periodic,
                               )
         semis[sx, sy] = SemidiscretizationHyperbolic(meshes[sx, sy], equations[sx, sy], initial_condition_wave, solver,
                                                      boundary_conditions=boundary_conditions)
@@ -116,45 +121,41 @@ for sx in 1:nx
 end
 
 
-# coupled semi
+# Coupled semi.
 semi = SemidiscretizationCoupled(semis...)
 
 ###############################################################################
 # ODE solvers, callbacks etc.
 
+# Create ODE problem with time span from 0.0 to 6.0.
 tspan = (0.0, 6.0)
 ode = semidiscretize(semi, tspan)
 
+# At the beginning of the main loop, the SummaryCallback prints a summary of the simulation setup
+# and resets the timers.
 summary_callback = SummaryCallback()
 
-analysis_interval = 100
-
-# analysis_callback = Array{AnalysisCallback}(undef, (nx, ny))
-# for sx in 1:nx
-#     for sy in 1:ny
-#         analysis_callback[sx, sy] = AnalysisCallback(semis[sx, sy], interval=100)
-#     end
-# end
-# analysis_callback = AnalysisCallbackCoupled(semi, analysis_callback...)
-
-alive_callback = AliveCallback(analysis_interval=analysis_interval)
-
-save_solution = SaveSolutionCallback(interval=1,
+# The SaveSolutionCallback allows to save the solution to a file in regular intervals.
+save_solution = SaveSolutionCallback(interval=10,
                                      save_initial_solution=true,
                                      save_final_solution=true,
                                      solution_variables=cons2prim)
 
+# The StepsizeCallback handles the re-calculation of the maximum Δt after each time step
 stepsize_callback = StepsizeCallback(cfl=1.0)
 
+# Show that the simulation is stil running.
+alive_callback = AliveCallback(alive_interval=100)
+
+# Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver.
 callbacks = CallbackSet(summary_callback,
-#                         analysis_callback,
                         alive_callback,
                         save_solution,
                         stepsize_callback)
 
 
 ###############################################################################
-# run the simulation
+# Run the simulation.
 
 sol = solve(ode, CarpenterKennedy2N54(williamson_condition=false),
             dt=0.01, # solve needs some value here but it will be overwritten by the stepsize_callback

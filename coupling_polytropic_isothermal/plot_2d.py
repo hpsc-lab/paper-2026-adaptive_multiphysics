@@ -50,7 +50,6 @@ for i in range(3):
         rho_part = np.reshape(rho_part, [4, 4, 16, 16], order='F')
         rho_part = np.swapaxes(rho_part, 1, 2)
         rho_part = np.reshape(rho_part, [64, 64], order='F')
-#        rho[16*i:16*(i+1), 16*j:16*(j+1)] = np.average(rho_part, axis=(0, 1))
         rho[64*i:64*(i+1), 64*j:64*(j+1)] = rho_part[:, :]
         f.close()
 
