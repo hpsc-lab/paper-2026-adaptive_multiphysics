@@ -39,7 +39,6 @@ def perform_interpolation(field):
 #t_idx = 0
 t_idx = 150
 
-#rho = np.zeros([48, 48])
 rho = np.zeros([48*4, 48*4])
 
 # Read the mesh files.
