@@ -12,6 +12,7 @@ kappa1 = 1.0
 equations1 = PolytropicEulerEquations2D(gamma1, kappa1)
 equations2 = CompressibleEulerEquations2D(5/3)
 
+# Acoustic wave initial condition.
 function initial_condition_wave(x, t, equations::PolytropicEulerEquations2D)
     gamma = equations.gamma
     kappa = equations.kappa
@@ -27,6 +28,7 @@ function initial_condition_wave(x, t, equations::PolytropicEulerEquations2D)
     return prim2cons(SVector(rho, v1, v2), equations)
 end
 
+# Constant field initial condition.
 function initial_condition_constant(x, t, equations::CompressibleEulerEquations2D)
     rho = 1.0
     v1 = 0.0
@@ -42,18 +44,9 @@ coordinates_min = (-2.0, -1.0)
 coordinates_max = ( 2.0,  1.0)
 parent_mesh = StructuredMesh(cells_per_dimension_parent, coordinates_min, coordinates_max)
 
-# Setup up the mesh views.
+# Set up the mesh views.
 mesh1 = StructuredMeshView(parent_mesh; indices_min = (1, 1), indices_max = (32, 32))
 mesh2 = StructuredMeshView(parent_mesh; indices_min = (33, 1), indices_max = (64, 32))
-
-# Extend the definition of the non-conservative Powell flux functions.
-import Trixi.flux_nonconservative_powell
-function flux_nonconservative_powell(u_ll, u_rr,
-                                     normal_direction_ll::AbstractVector,
-                                     equations::IdealGlmMhdEquations2D)
-    flux_nonconservative_powell(u_ll, u_rr, normal_direction_ll, normal_direction_ll,
-                                equations)
-end
 
 # Define the solver for both systems.
 volume_flux = flux_winters_etal
@@ -65,6 +58,7 @@ volume_flux = flux_winters_etal
 solver1 = DGSEM(polydeg=3, surface_flux=flux_hll,
                 volume_integral=VolumeIntegralFluxDifferencing(volume_flux))
 
+# The x-boundaries are coupled, while the y-boundaries are periodic.
 coupling_function1 = (x, u, equations_other, equations_own) -> SVector(u[1], u[2], u[3])
 boundary_conditions1 = (
                        x_neg=BoundaryConditionCoupled(2, (:end, :i_forward), Float64, coupling_function1),
@@ -81,6 +75,7 @@ initial_condition2 = initial_condition_constant
 solver2 = DGSEM(polydeg = 3, surface_flux = flux_hll,
                 volume_integral = VolumeIntegralWeakForm())
 
+# The x-boundaries are coupled, while the y-boundaries are periodic.
 coupling_function2 = (x, u, equations_other, equations_own) -> SVector(u[1], u[2], u[3], u[1]^equations_own.gamma * equations_own.inv_gamma_minus_one + 0.5 * (u[2]^2/u[1] + u[3]^2/u[1]))
 boundary_conditions2 = (
                        x_neg=BoundaryConditionCoupled(1, (:end, :i_forward), Float64, coupling_function2),
@@ -116,10 +111,10 @@ save_solution = SaveSolutionCallback(interval=5,
                                      save_final_solution=true,
                                      solution_variables=cons2prim)
 
-# The StepsizeCallback handles the re-calculcation of the maximum Δt after each time step
+# The StepsizeCallback handles the re-calculation of the maximum Δt after each time step
 stepsize_callback = StepsizeCallback(cfl=1.0)
 
-# Show that the simulation is stil running.
+# Show that the simulation is still running.
 alive_callback = AliveCallback(alive_interval=100)
 
 # Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver.

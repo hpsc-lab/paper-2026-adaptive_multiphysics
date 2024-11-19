@@ -35,16 +35,14 @@ def perform_interpolation(field):
     return field
 
 
-# Define the time index to plot
+# Define the time index to plot.
 t_idx = 0
 #t_idx = 125
 
 # Read the mesh files.
-#f = h5py.File('out/mesh_1_000000.h5')
 f = h5py.File('out/mesh_1_000000000.h5')
 r_idx = f.attrs['size'][0]
 f.close()
-#f = h5py.File('out/mesh_2_000000.h5')
 f = h5py.File('out/mesh_2_000000000.h5')
 f.close()
 
@@ -55,7 +53,6 @@ rho_l = f['variables_1']
 rho_l = np.reshape(rho_l, [4, 4, r_idx, 32], order='F')
 rho_l = np.swapaxes(rho_l, 1, 2)
 rho_l = np.reshape(rho_l, [4*r_idx, 4*32], order='F')
-#rho_l = np.average(rho_l, axis=(0, 1))
 f.close()
 
 # Euler right
@@ -64,7 +61,6 @@ rho_r = f['variables_1']
 rho_r = np.reshape(rho_r, [4, 4, r_idx, 32], order='F')
 rho_r = np.swapaxes(rho_r, 1, 2)
 rho_r = np.reshape(rho_r, [4*(64 - r_idx), 4*32], order='F')
-#rho_r = np.average(rho_r, axis=(0, 1))
 f.close()
 
 # Get everything into one array.
