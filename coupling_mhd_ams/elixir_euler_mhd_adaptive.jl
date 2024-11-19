@@ -2,12 +2,12 @@ using OrdinaryDiffEq
 using Trixi
 
 """
-Adaptive coupling between an MHD system and an Euler system.
+Adaptive coupling between an MHD system and 8 Euler systems.
 """
 
 
 """
-Determine if and how we should perform adaptive omdel selection (AMS).
+Determine if and how we should perform adaptive model selection (AMS).
 
 # Arguments
 - `u_old`: the old (pre AMS) solution vector.
@@ -19,7 +19,7 @@ function ams_criteria!(u_old, semi_old, t_expand, t, shrink_delay)
     # Compute the magnetic energy density.
     e_mag = u_old[5][6, :, :, :].^2 + u_old[5][7, :, :, :].^2
     e_mag = reshape(e_mag, (4, 4, semi_old[5].mesh.cells_per_dimension[1], semi_old[5].mesh.cells_per_dimension[2]))
-    # These are deltas in cell indices for all 4 edges.
+    # These are deltas in cell indices for all 4 edges of the mesh.
     mhd_index_delta_left = 0
     mhd_index_delta_right = 0
     mhd_index_delta_up = 0
@@ -78,7 +78,7 @@ function ams_criteria!(u_old, semi_old, t_expand, t, shrink_delay)
 end
 
 ###############################################################################
-# define the callbacks changing the mesh min and max indices
+# Define the callbacks changing the mesh min and max indices.
 struct AmsCallback
     parent_mesh
     mesh
@@ -197,6 +197,7 @@ function (ams_callback::AmsCallback)(integrator)
                 end
             end
 
+            # Copy the data.
             for semi_idx in 1:9
                 for semi_old_idx in 1:9
                     for element_old in 1:size(node_coordinates_old[semi_old_idx])[4]
@@ -231,7 +232,7 @@ function (ams_callback::AmsCallback)(integrator)
                 end
             end
 
-            # Resize the problem.
+            # Resize the ODE problem.
             resize!(integrator.u, size(u_new)[1])
             for mesh_idx in 1:9
                 integrator.u[ode.p.u_indices[mesh_idx]] = u[mesh_idx][:]
@@ -438,7 +439,7 @@ stepsize_callback = StepsizeCallback(cfl=cfl)
 # The Generalized Lagrange Method divergence cleans the magnetic field.
 glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl, semi_indices=[5])
 
-# Show that the simulation is stil running.
+# Show that the simulation is still running.
 alive_callback = AliveCallback(alive_interval=100)
 
 # Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver.

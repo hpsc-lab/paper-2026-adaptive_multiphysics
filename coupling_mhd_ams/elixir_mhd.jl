@@ -1,6 +1,12 @@
 using OrdinaryDiffEq
 using Trixi
 
+"""
+Full MHD simulation for the entire domain as reference for
+accuracy and speed.
+"""
+
+
 ###############################################################################
 equations = IdealGlmMhdEquations2D(5/3)
 
@@ -55,7 +61,7 @@ ode = semidiscretize(semi, tspan)
 # and resets the timers.
 summary_callback = SummaryCallback()
 
-# Show that the simulation is stil running.
+# Show that the simulation is still running.
 alive_callback = AliveCallback(alive_interval=100)
 
 # The SaveSolutionCallback allows to save the solution to a file in regular intervals.

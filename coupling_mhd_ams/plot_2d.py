@@ -133,17 +133,14 @@ b_x_m = f['variables_6']
 b_x_m = np.reshape(b_x_m, [4, 4, r_idx - l_idx + 1, (t_idx - b_idx + 1)], order='F')
 b_x_m = np.swapaxes(b_x_m, 1, 2)
 b_x_m = np.reshape(b_x_m, [4*(r_idx - l_idx + 1), 4*(t_idx - b_idx + 1)], order='F')
-#b_x_m = np.average(b_x_m, axis=(0, 2))
 b_y_m = f['variables_7']
 b_y_m = np.reshape(b_y_m, [4, 4, r_idx - l_idx + 1, (t_idx - b_idx + 1)], order='F')
 b_y_m = np.swapaxes(b_y_m, 1, 2)
 b_y_m = np.reshape(b_y_m, [4*(r_idx - l_idx + 1), 4*(t_idx - b_idx + 1)], order='F')
-#b_y_m = np.average(b_y_m, axis=(0, 2))
 rho_m = f['variables_1']
 rho_m = np.reshape(rho_m, [4, 4, r_idx - l_idx + 1, (t_idx - b_idx + 1)], order='F')
 rho_m = np.swapaxes(rho_m, 1, 2)
 rho_m = np.reshape(rho_m, [4*(r_idx - l_idx + 1), 4*(t_idx - b_idx + 1)], order='F')
-#rho_m = np.average(rho_m, axis=(0, 2))
 f.close()
 
 # Euler middle
@@ -171,9 +168,7 @@ rho_mhd = f['variables_1']
 rho_mhd = np.reshape(rho_mhd, [4, 4, 96, 96], order='F')
 rho_mhd = np.swapaxes(rho_mhd, 1, 2)
 rho_mhd = np.reshape(rho_mhd, [4*96, 4*96], order='F')
-#rho_mhd = np.average(rho_mhd, axis=(0, 2))
 f.close()
-
 
 # Get everything into one array.
 rho = np.zeros([96*4, 96*4])
