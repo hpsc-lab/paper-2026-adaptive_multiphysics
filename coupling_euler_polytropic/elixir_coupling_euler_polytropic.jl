@@ -7,9 +7,7 @@ Coupled one polytropic Euler system with one Euler system.
 
 ###############################################################################
 # Semidiscretization of the compressible Euler multicomponent equations.
-gamma1 = 2.0
-kappa1 = 1.0
-equations1 = PolytropicEulerEquations2D(gamma1, kappa1)
+equations1 = PolytropicEulerEquations2D(2.0, 1.0)
 equations2 = CompressibleEulerEquations2D(5/3)
 
 # Acoustic wave initial condition.
