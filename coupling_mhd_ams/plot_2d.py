@@ -99,7 +99,7 @@ def extract_rho_rt(f, r_idx, t_idx):
     return rho
 
 
-# Define the time index to plot
+#Define the time index to plot
 #time_idx = 0
 time_idx = 14300
 
@@ -205,11 +205,11 @@ fig = plt.figure(figsize=(width, height))
 ax = fig.add_subplot(111)
 plt.ion()
 
-im = plt.imshow(rho.T, origin='lower', extent=[-3, 3, -3, 3], vmin=0.997, vmax=1.014)
+#im = plt.imshow(rho.T, origin='lower', extent=[-3, 3, -3, 3], vmin=0.997, vmax=1.014)
 #im = plt.imshow((b_x**2 + b_y**2).T, origin='lower', extent=[-3, 3, -3, 3], vmax=0.018, cmap='plasma')
-#im = plt.imshow(abs(rho - rho_mhd).T, origin='lower', extent=[-3, 3, -3, 3], vmin=0)
+im = plt.imshow(abs(rho - rho_mhd).T, origin='lower', extent=[-3, 3, -3, 3], vmin=0)
 
-# Plot the domain boundarier.
+# Plot the domain boundaries.
 left = l_idx/16 - 3
 right = r_idx/16 - 3
 bottom = b_idx/16 - 3
@@ -243,9 +243,9 @@ for label in ax.yaxis.get_ticklabels():
 # Add colorbar.
 cax = ax.inset_axes([0.05, 1.4, 0.9, 0.1])
 cb = fig.colorbar(im, orientation='vertical')
-cb.set_label(r'$\rho$', fontsize=25)
+#cb.set_label(r'$\rho$', fontsize=25)
 #cb.set_label(r'$B^2$', fontsize=25)
-#cb.set_label(r'$|\Delta\rho|$', fontsize=25)
+cb.set_label(r'$|\Delta\rho|$', fontsize=25)
 cbytick_obj = plt.getp(cb.ax.axes, 'yticklabels')
 for tick in cb.ax.get_yticklabels():
     tick.set_fontsize(15)
