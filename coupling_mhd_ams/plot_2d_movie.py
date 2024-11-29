@@ -10,9 +10,9 @@ from scipy.interpolate import lagrange
 
 
 # Define the quantity to plot.
-quantity = 'rho'
+#quantity = 'rho'
 #quantity = 'b2'
-#quantity = 'delta_rho'
+quantity = 'delta_rho'
 
 # Define the Lagrange polynomial in 2d.
 nodes = np.array([-1, -1/np.sqrt(5), 1/np.sqrt(5), 1])
@@ -106,7 +106,7 @@ def extract_rho_rt(f, r_idx, t_idx):
 
 plt.ioff()
 
-for time_idx in np.arange(0, 14300, 100):
+for time_idx in np.arange(0, 14900, 100):
     # Read the mesh files.
     try:
         f = h5py.File('out_coupled/mesh_1_{0:09}.h5'.format(time_idx))
@@ -217,7 +217,7 @@ for time_idx in np.arange(0, 14300, 100):
         if quantity == 'b2':
             im = plt.imshow((b_x**2 + b_y**2).T, origin='lower', extent=[-3, 3, -3, 3], vmax=0.018, cmap='plasma')
         if quantity == 'delta_rho':
-            im = plt.imshow(abs(rho - rho_mhd).T, origin='lower', extent=[-3, 3, -3, 3], vmin=0)
+            im = plt.imshow(abs(rho - rho_mhd).T, origin='lower', extent=[-3, 3, -3, 3], vmin=0, vmax=1.05e-6)
 
         # Plot the domain boundaries.
         if quantity != 'b2':
