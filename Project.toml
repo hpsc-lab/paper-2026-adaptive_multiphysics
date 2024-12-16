@@ -1,0 +1,8 @@
+name="paper-2024-structured_mesh_coupled"
+authors=["Michael Schlottke-Lakemper <michael.schlottke-lakemper@uni-a.de>", "Simon Candelaresi <simon.candelaresi@uni-a.de>"]
+
+[deps]
+OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
+
+[compat]
+OrdinaryDiffEq = "6.66.0"
