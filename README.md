@@ -26,9 +26,14 @@ towards the Euler systems.
 
 ## Usage
 
-Our numerical test wer run on Julia 1.10.6.
-Older versions, like 1.9, do work, but can give somewhat different performance.
+Our numerical test were run on Julia 1.10.6.
+Older versions, like 1.9, do work, but can give somewhat different performance results.
 To run any of the three test simulation simply run
+
+```bash
+julia --project=.
+```
+
 ```julia
 julia> include("coupling_mhd_ams/elixir_euler_mhd_adaptive.jl")
 ```

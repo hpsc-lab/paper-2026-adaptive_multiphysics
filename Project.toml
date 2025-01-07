@@ -1,8 +1,10 @@
-name="paper-2024-structured_mesh_coupled"
-authors=["Michael Schlottke-Lakemper <michael.schlottke-lakemper@uni-a.de>", "Simon Candelaresi <simon.candelaresi@uni-a.de>"]
+name = "paper-2024-structured_mesh_coupled"
+authors = ["Michael Schlottke-Lakemper <michael.schlottke-lakemper@uni-a.de>", "Simon Candelaresi <simon.candelaresi@uni-a.de>"]
 
 [deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
+Trixi = "a7f1ee26-1774-49b1-8366-f1abc58fbfcb"
 
 [compat]
 OrdinaryDiffEq = "6.66.0"
