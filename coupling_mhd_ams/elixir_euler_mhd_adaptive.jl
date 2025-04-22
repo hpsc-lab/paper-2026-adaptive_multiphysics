@@ -288,7 +288,7 @@ equations_mhd = IdealGlmMhdEquations2D(5/3)
 Define the initial condition for the MHD domain as a magnetic flux
 ring of toroidal shape with a velocity.
 """
-function initial_condition_bump(x, t, equations::IdealGlmMhdEquations2D)
+function initial_condition_ring(x, t, equations::IdealGlmMhdEquations2D)
     rho = 1.0
     v1 = 0.2
     v2 = 0.1
@@ -375,7 +375,7 @@ boundary_conditions5 = (x_neg=BoundaryConditionCoupled(4, (:end, :i_forward), Fl
                         x_pos=BoundaryConditionCoupled(6, (:begin, :i_forward), Float64, coupling_function_euler_mhd),
                         y_neg=BoundaryConditionCoupled(2, (:i_forward, :end), Float64, coupling_function_euler_mhd),
                         y_pos=BoundaryConditionCoupled(8, (:i_forward, :begin), Float64, coupling_function_euler_mhd),)
-semis[5] = SemidiscretizationHyperbolic(mesh[5], equations_mhd, initial_condition_bump, solvers[5],
+semis[5] = SemidiscretizationHyperbolic(mesh[5], equations_mhd, initial_condition_ring, solvers[5],
                                      boundary_conditions=boundary_conditions5)
 
 solvers[6] = DGSEM(polydeg = 3, surface_flux = flux_hll, volume_integral = VolumeIntegralWeakForm())

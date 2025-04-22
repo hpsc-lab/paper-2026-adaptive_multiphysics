@@ -13,7 +13,7 @@ equations = IdealGlmMhdEquations2D(5/3)
 """
 Define the initial condition as a magnetic flux ring of toroidal shape with a velocity.
 """
-function initial_condition_bump(x, t, equations::IdealGlmMhdEquations2D)
+function initial_condition_ring(x, t, equations::IdealGlmMhdEquations2D)
     rho = 1.0
     v1 = 0.2
     v2 = 0.1
@@ -34,7 +34,7 @@ coordinates_min = (-3.0, -3.0)
 coordinates_max = ( 3.0,  3.0)
 mesh = StructuredMesh(cells_per_dimension, coordinates_min, coordinates_max)
 
-initial_condition = initial_condition_bump
+initial_condition = initial_condition_ring
 
 volume_flux = (flux_hindenlang_gassner, flux_nonconservative_powell)
 solver = DGSEM(polydeg = 3,
