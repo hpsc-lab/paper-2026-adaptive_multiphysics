@@ -54,9 +54,9 @@ volume_flux = (flux_hindenlang_gassner, flux_nonconservative_powell)
 
 solvers[1] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
-boundary_conditions1 = (x_neg=boundary_condition_inflow,
+boundary_conditions1 = (x_neg=BoundaryConditionDirichlet(initial_condition),
                         x_pos=BoundaryConditionCoupled(2, (:begin, :i_forward), Float64, coupling_function),
-                        y_neg=BoundaryConditionCoupled(7, (:i_forward, :end), Float64, coupling_function),
+                        y_neg=BoundaryConditionDirichlet(initial_condition),
                         y_pos=BoundaryConditionCoupled(4, (:i_forward, :begin), Float64, coupling_function))
 semis[1] = SemidiscretizationHyperbolic(mesh[1], equations, initial_condition, solvers[1], boundary_conditions=boundary_conditions1)
 
@@ -64,21 +64,21 @@ solvers[2] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_noncon
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 boundary_conditions2 = (x_neg=BoundaryConditionCoupled(1, (:end, :i_forward), Float64, coupling_function),
                         x_pos=BoundaryConditionCoupled(3, (:begin, :i_forward), Float64, coupling_function),
-                        y_neg=BoundaryConditionCoupled(8, (:i_forward, :end), Float64, coupling_function),
+                        y_neg=BoundaryConditionDirichlet(initial_condition),
                         y_pos=BoundaryConditionCoupled(5, (:i_forward, :begin), Float64, coupling_function))
 semis[2] = SemidiscretizationHyperbolic(mesh[2], equations, initial_condition, solvers[2], boundary_conditions=boundary_conditions2)
 
 solvers[3] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 boundary_conditions3 = (x_neg=BoundaryConditionCoupled(2, (:end, :i_forward), Float64, coupling_function),
-                        x_pos=BoundaryConditionCoupled(1, (:begin, :i_forward), Float64, coupling_function),
-                        y_neg=BoundaryConditionCoupled(9, (:i_forward, :end), Float64, coupling_function),
+                        x_pos=BoundaryConditionDirichlet(initial_condition),
+                        y_neg=BoundaryConditionDirichlet(initial_condition),
                         y_pos=BoundaryConditionCoupled(6, (:i_forward, :begin), Float64, coupling_function))
 semis[3] = SemidiscretizationHyperbolic(mesh[3], equations, initial_condition, solvers[3], boundary_conditions=boundary_conditions3)
 
 solvers[4] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
-boundary_conditions4 = (x_neg=BoundaryConditionCoupled(6, (:end, :i_forward), Float64, coupling_function),
+boundary_conditions4 = (x_neg=BoundaryConditionDirichlet(initial_condition),
                         x_pos=BoundaryConditionCoupled(5, (:begin, :i_forward), Float64, coupling_function),
                         y_neg=BoundaryConditionCoupled(1, (:i_forward, :end), Float64, coupling_function),
                         y_pos=BoundaryConditionCoupled(7, (:i_forward, :begin), Float64, coupling_function))
@@ -96,17 +96,17 @@ semis[5] = SemidiscretizationHyperbolic(mesh[5], equations, initial_condition, s
 solvers[6] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 boundary_conditions6 = (x_neg=BoundaryConditionCoupled(5, (:end, :i_forward), Float64, coupling_function),
-                        x_pos=BoundaryConditionCoupled(4, (:begin, :i_forward), Float64, coupling_function),
+                        x_pos=BoundaryConditionDirichlet(initial_condition),
                         y_neg=BoundaryConditionCoupled(3, (:i_forward, :end), Float64, coupling_function),
                         y_pos=BoundaryConditionCoupled(9, (:i_forward, :begin), Float64, coupling_function))
 semis[6] = SemidiscretizationHyperbolic(mesh[6], equations, initial_condition, solvers[6], boundary_conditions=boundary_conditions6)
 
 solvers[7] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
-boundary_conditions7 = (x_neg=BoundaryConditionCoupled(9, (:end, :i_forward), Float64, coupling_function),
+boundary_conditions7 = (x_neg=BoundaryConditionDirichlet(initial_condition),
                         x_pos=BoundaryConditionCoupled(8, (:begin, :i_forward), Float64, coupling_function),
                         y_neg=BoundaryConditionCoupled(4, (:i_forward, :end), Float64, coupling_function),
-                        y_pos=BoundaryConditionCoupled(1, (:i_forward, :begin), Float64, coupling_function))
+                        y_pos=BoundaryConditionDirichlet(initial_condition))
 semis[7] = SemidiscretizationHyperbolic(mesh[7], equations, initial_condition, solvers[7], boundary_conditions=boundary_conditions7)
 
 solvers[8] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
@@ -114,15 +114,15 @@ solvers[8] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_noncon
 boundary_conditions8 = (x_neg=BoundaryConditionCoupled(7, (:end, :i_forward), Float64, coupling_function),
                         x_pos=BoundaryConditionCoupled(9, (:begin, :i_forward), Float64, coupling_function),
                         y_neg=BoundaryConditionCoupled(5, (:i_forward, :end), Float64, coupling_function),
-                        y_pos=BoundaryConditionCoupled(2, (:i_forward, :begin), Float64, coupling_function))
+                        y_pos=BoundaryConditionDirichlet(initial_condition))
 semis[8] = SemidiscretizationHyperbolic(mesh[8], equations, initial_condition, solvers[8], boundary_conditions=boundary_conditions8)
 
 solvers[9] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 boundary_conditions9 = (x_neg=BoundaryConditionCoupled(8, (:end, :i_forward), Float64, coupling_function),
-                        x_pos=BoundaryConditionCoupled(7, (:begin, :i_forward), Float64, coupling_function),
+                        x_pos=BoundaryConditionDirichlet(initial_condition),
                         y_neg=BoundaryConditionCoupled(6, (:i_forward, :end), Float64, coupling_function),
-                        y_pos=BoundaryConditionCoupled(3, (:i_forward, :begin), Float64, coupling_function))
+                        y_pos=BoundaryConditionDirichlet(initial_condition))
 semis[9] = SemidiscretizationHyperbolic(mesh[9], equations, initial_condition, solvers[9], boundary_conditions=boundary_conditions9)
 
 # Put together the coupled semidiscretization.
