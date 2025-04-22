@@ -20,7 +20,7 @@ function initial_condition(x, t, equations::IdealGlmMhdEquations2D)
     v2 = -x[2]
     v3 = 0.0
     p = rho^equations.gamma
-    B1 = x[1]/2 + x[2]
+    B1 = -x[1]/2 + x[2]
     B2 = x[1] + x[2]/2
     B3 = 0.0
     psi = 0.0
@@ -54,7 +54,7 @@ volume_flux = (flux_hindenlang_gassner, flux_nonconservative_powell)
 
 solvers[1] = DGSEM(polydeg = 3, surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
-boundary_conditions1 = (x_neg=BoundaryConditionCoupled(3, (:end, :i_forward), Float64, coupling_function),
+boundary_conditions1 = (x_neg=boundary_condition_inflow,
                         x_pos=BoundaryConditionCoupled(2, (:begin, :i_forward), Float64, coupling_function),
                         y_neg=BoundaryConditionCoupled(7, (:i_forward, :end), Float64, coupling_function),
                         y_pos=BoundaryConditionCoupled(4, (:i_forward, :begin), Float64, coupling_function))
