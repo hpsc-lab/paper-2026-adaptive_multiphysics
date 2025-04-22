@@ -1,2 +1,0 @@
-#timestep time dt l2_B1 l2_B2 l2_B3 l2_rho_1 l2_rho_v1_1 l2_rho_v2_1 l2_rho_v3_1 l2_rho_e_1 l2_rho_2 l2_rho_v1_2 l2_rho_v2_2 l2_rho_v3_2 l2_rho_e_2 l2_psi linf_B1 linf_B2 linf_B3 linf_rho_1 linf_rho_v1_1 linf_rho_v2_1 linf_rho_v3_1 linf_rho_e_1 linf_rho_2 linf_rho_v1_2 linf_rho_v2_2 linf_rho_v3_2 linf_rho_e_2 linf_psi dsdu_ut l2_divb linf_divb temperature1 temperature2 
-0 0.0 1.0
