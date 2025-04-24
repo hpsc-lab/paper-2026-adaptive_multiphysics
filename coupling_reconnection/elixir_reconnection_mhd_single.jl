@@ -16,8 +16,8 @@ that are being forced to reconnect at the center.
 """
 function initial_condition(x, t, equations::IdealGlmMhdEquations2D)
     rho = 1.0
-    v1 = x[1]
-    v2 = -x[2]
+    v1 = 0.0
+    v2 = 0.0
     v3 = 0.0
     p = rho^equations.gamma
     B1 = -x[1]/2 + x[2]
@@ -29,7 +29,7 @@ function initial_condition(x, t, equations::IdealGlmMhdEquations2D)
 end
 
 # Set up the parent mesh.
-cells_per_dimension_parent = (96, 96)
+cells_per_dimension_parent = (32, 32)
 coordinates_min = (-3.0, -3.0)
 coordinates_max = ( 3.0,  3.0)
 mesh = StructuredMesh(cells_per_dimension_parent, coordinates_min, coordinates_max, periodicity=(false, false))
