@@ -16,8 +16,8 @@ that are being forced to reconnect at the center.
 """
 function initial_condition(x, t, equations::IdealGlmMhdEquations2D)
     rho = 1.0
-    v1 = 0.0
-    v2 = 0.0
+    v1 = x[1]/2
+    v2 = -x[2]/2
     v3 = 0.0
     p = rho^equations.gamma
     B1 = -x[1]/2 + x[2]
