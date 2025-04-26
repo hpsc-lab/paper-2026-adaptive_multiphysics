@@ -2,9 +2,8 @@ using OrdinaryDiffEqSSPRK, OrdinaryDiffEqLowStorageRK
 using Trixi
 
 """
-Adaptive coupling between an 9 MHD systems.
+Reconnection region using MHD simulation.
 """
-
 
 ###############################################################################
 # Semidiscretization of the compressible Euler multicomponent equations.
