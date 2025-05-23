@@ -14,14 +14,14 @@ function initial_condition_reconnection(x, t, equations::IdealGlmMhdMultiIonEqua
     rho1 = 1.0
     rho2 = 1.0
     v11 = x[1]/2 * 0.1
-    v21 = x[1]/2 * 0.1
+    v21 = x[1]/2 * 0.05
     v12 = -x[2]/2 * 0.1
-    v22 = -x[2]/2 * 0.1
+    v22 = -x[2]/2 * 0.05
     v13 = 0.0
     v23 = 0.0
 #     p1 = 0.00040170535986
 #     p2 = 0.00401705359856
-    p1 = 1.0
+    p1 = 2.0
     p2 = 1.0
     B1 = (-x[1]/2 + x[2])
     B2 = (x[1] + x[2]/2)
@@ -109,9 +109,12 @@ function source_terms(u, x, t, equations::IdealGlmMhdMultiIonEquations2D)
     source_terms_collision_ion_electron(u, x, t, equations)
 end
 
+boundary_condition_neumann_zero = BoundaryConditionNeumann((x, t, equations) -> SVector(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition_reconnection, solver,
                                     source_terms = source_terms_lorentz,
-                                    boundary_conditions=BoundaryConditionDirichlet(initial_condition_reconnection))
+#                                     boundary_conditions=BoundaryConditionDirichlet(initial_condition_reconnection))
+                                    boundary_conditions=boundary_condition_neumann_zero)
 
 ###############################################################################
 # ODE solvers, callbacks etc.
