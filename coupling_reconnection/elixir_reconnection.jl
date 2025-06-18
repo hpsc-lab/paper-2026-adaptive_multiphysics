@@ -129,10 +129,10 @@ coupling_function_mion_mhd = (x, u, equations_other, equations_own) -> SVector(u
                                                                                u[8] + u[13],
                                                                                u[1], u[2], u[3],
                                                                                u[14])
-coupling_function_mhd_ion = (x, u, equations_other, equations_own) -> SVector(u[6], u[7], u[8],
-                                                                              u[1]/2, u[2], u[3], u[4], u[5]/2,
-                                                                              u[1]/2, u[2], u[3], u[4], u[5]/2,
-                                                                              u[9])
+coupling_function_mhd_mion = (x, u, equations_other, equations_own) -> SVector(u[6], u[7], u[8],
+                                                                               u[1]/2, u[2], u[3], u[4], u[5]/2,
+                                                                               u[1]/2, u[2], u[3], u[4], u[5]/2,
+                                                                               u[9])
 coupling_function_identity = (x, u, equations_other, equations_own) -> u
 
 # Entropy conservative volume numerical fluxes with standard LLF dissipation at interfaces
@@ -181,10 +181,10 @@ semi4 = SemidiscretizationHyperbolic(mesh[4], equations_mhd, initial_condition_m
 
 solver5 = DGSEM(polydeg = 3, surface_flux = surface_flux_mion,
                 volume_integral = VolumeIntegralFluxDifferencing(volume_flux_moin))
-boundary_conditions5 = (x_neg=BoundaryConditionCoupled(4, (:end, :i_forward), Float64, coupling_function_mhd_ion),
-                        x_pos=BoundaryConditionCoupled(6, (:begin, :i_forward), Float64, coupling_function_mhd_ion),
-                        y_neg=BoundaryConditionCoupled(2, (:i_forward, :end), Float64, coupling_function_mhd_ion),
-                        y_pos=BoundaryConditionCoupled(8, (:i_forward, :begin), Float64, coupling_function_mhd_ion),)
+boundary_conditions5 = (x_neg=BoundaryConditionCoupled(4, (:end, :i_forward), Float64, coupling_function_mhd_mion),
+                        x_pos=BoundaryConditionCoupled(6, (:begin, :i_forward), Float64, coupling_function_mhd_mion),
+                        y_neg=BoundaryConditionCoupled(2, (:i_forward, :end), Float64, coupling_function_mhd_mion),
+                        y_pos=BoundaryConditionCoupled(8, (:i_forward, :begin), Float64, coupling_function_mhd_mion),)
 semi5 = SemidiscretizationHyperbolic(mesh[5], equations_mion, initial_condition_mion, solver5, boundary_conditions=boundary_conditions5)
 
 solver6 = DGSEM(polydeg = 3, surface_flux = surface_flux_mhd,
