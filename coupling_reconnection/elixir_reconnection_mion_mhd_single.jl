@@ -109,12 +109,9 @@ function source_terms(u, x, t, equations::IdealGlmMhdMultiIonEquations2D)
     source_terms_collision_ion_electron(u, x, t, equations)
 end
 
-boundary_condition_neumann_zero = BoundaryConditionNeumann((x, t, equations) -> SVector(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
-
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition_reconnection, solver,
                                     source_terms = source_terms_lorentz,
-#                                     boundary_conditions=BoundaryConditionDirichlet(initial_condition_reconnection))
-                                    boundary_conditions=boundary_condition_neumann_zero)
+                                    boundary_conditions=BoundaryConditionDirichlet(initial_condition_reconnection))
 
 ###############################################################################
 # ODE solvers, callbacks etc.
