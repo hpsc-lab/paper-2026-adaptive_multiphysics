@@ -94,13 +94,11 @@ surface_flux = (flux_lax_friedrichs, flux_nonconservative_central)
 solver = DGSEM(polydeg = 3, surface_flux = surface_flux,
                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 
+cells_per_dimension_parent = (64, 64)
 coordinates_min = (-3.0, -3.0)
 coordinates_max = (3.0, 3.0)
 # We use a very coarse mesh because this is a 0-dimensional case
-mesh = TreeMesh(coordinates_min, coordinates_max,
-                initial_refinement_level = 2,
-                n_cells_max = 1_000_000,
-                periodicity=(false, false))
+mesh = StructuredMesh(cells_per_dimension_parent, coordinates_min, coordinates_max, periodicity=(false, false))
 
 # Ion-ion and ion-electron collision source terms
 # In this particular case, we can omit source_terms_lorentz because the magnetic field is zero!
@@ -136,12 +134,15 @@ stepsize_callback = StepsizeCallback(cfl = cfl) # Very small CFL due to the stif
 # The Generalized Lagrange Method divergence cleans the magnetic field.
 glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl)
 
-save_restart = SaveRestartCallback(interval = 1000,
-                                   save_final_restart = true)
+save_solution = SaveSolutionCallback(interval=1,
+                                     save_initial_solution=true,
+                                     save_final_solution=true,
+                                     output_directory="out",
+                                     solution_variables=cons2prim)
 
 callbacks = CallbackSet(summary_callback,
                         analysis_callback, alive_callback,
-                        save_restart,
+                        save_solution,
                         stepsize_callback,
                         glm_speed_callback)
 
