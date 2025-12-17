@@ -75,10 +75,10 @@ function initial_condition(x, t, equations::IdealGlmMhdEquations2D)
     B1 = (x[2] - 1) * r * exp(-r^2*5)
     B2 = -x[1] * r * exp(-r^2*5)
 
-    # Add the bottom magnetic ring (counter-clockwise)
+    # Add the bottom magnetic ring (clockwise)
     r = sqrt(x[1]^2 + (x[2] + 1)^2)
-    B1 = B1 + -(x[2] + 1) * r * exp(-r^2*5)
-    B2 = B2 + x[1] * r * exp(-r^2*5)
+    B1 = B1 + (x[2] + 1) * r * exp(-r^2*5)
+    B2 = B2 - x[1] * r * exp(-r^2*5)
 
     B3 = 0
 
