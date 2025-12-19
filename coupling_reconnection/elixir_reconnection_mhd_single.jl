@@ -10,18 +10,100 @@ Reconnection region using MHD simulation.
 equations = IdealGlmMhdEquations2D(5/3)
 
 """
-Define the initial condition for the MHD domain as a hyperbolic magnetic field lines
-that are being forced to reconnect at the center.
+    initial_condition(x, t, equations::IdealGlmMhdEquations2D)
+
+2D Harris current sheet with a small tearing-mode perturbation
+A_y(x,z) = -B0*L*log(cosh(x/L)) + δA*cos(k*z)*sech(x/L)
+
+Returned fields are conservative variables via `prim2cons`.
 """
+# function initial_condition(x, t, equations::IdealGlmMhdEquations2D)
+#     # --- Parameters ----------------------------------------------------------
+#     B0   = 1.0          # Asymptotic reversing field
+#     L    = 0.5          # Sheet half-thickness
+#     Bg   = 0.1          # Guide field (By)
+#     n0   = 1.0          # Peak Harris density
+#     nbg  = 0.2          # Background density
+#     pbg  = 0.2          # Background pressure
+#
+#     δA   = 0.01         # Perturbation amplitude in A_y
+#     k    = 2π / 1.0     # Mode number along z
+#
+#     γ     = equations.gamma
+#
+#     # Coordinates
+#     x_ = x[1]
+#     z_ = x[2]
+#
+#     # --- Harris sheet ingredients --------------------------------------------
+#     sechx = 1 / cosh(x_/L)
+#
+#     # Vector potential A_y(x,z)
+#     A_y = -B0 * L * log(cosh(x_/L)) +
+#           δA * cos(k*z_) * sechx
+#
+#     # Magnetic field from B = ∇ × (A_y * e_y)
+#     # Bx = -∂A_y/∂z
+#     B1 = +δA * k * sin(k*z_) * sechx
+#
+#     # ∂A_y/∂x
+#     dAydx = -B0 * tanh(x_/L) +
+#             δA * cos(k*z_) * (-sechx * tanh(x_/L) / L)
+#
+#     B3 = dAydx
+#     B2 = Bg
+#
+#     # --- Density and pressure (Harris equilibrium) ----------------------------
+#     rho = n0 * sechx^2 + nbg
+#     p   = pbg + (B0^2)*sechx^2 / 2   # total pressure balance p+B^2/2 = const
+#
+#     # --- Velocities (equilibrium, no flow) -----------------------------------
+#     v1 = 0.0
+#     v2 = 0.0
+#     v3 = 0.0
+#
+#     # GLM divergence-cleaning variable
+#     psi = 0.0
+#
+#     return prim2cons(SVector(rho, v1, v2, v3, p, B1, B2, B3, psi), equations)
+# end
+
 function initial_condition(x, t, equations::IdealGlmMhdEquations2D)
+    # Add the bottom magnetic ring (clockwise)
+    r = sqrt(x[1]^2 + (x[2] - 1)^2)
+    B1 = (x[2] - 1) * r * exp(-r^2*5)
+    B2 = -x[1] * r * exp(-r^2*5)
+
+    # Add the bottom magnetic ring (clockwise)
+    r = sqrt(x[1]^2 + (x[2] + 1)^2)
+    B1 = B1 + (x[2] + 1) * r * exp(-r^2*5)
+    B2 = B2 - x[1] * r * exp(-r^2*5)
+
+    B3 = 0
+
+    # Add a velocity that pushes the magnetic field towards the center in y
+    # and outwards in x.
+    r = sqrt((x[1] - 1)^2 + (x[2] - 1)^2)
+    v1 = -(x[2] - 1) * r * exp(-r^2*5)
+    v2 = (x[1] - 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] + 1)^2 + (x[2] - 1)^2)
+    v1 = v1 + (x[2] - 1) * r * exp(-r^2*5)
+    v2 = v2 - (x[1] + 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] - 1)^2 + (x[2] + 1)^2)
+    v1 = v1 + (x[2] + 1) * r * exp(-r^2*5)
+    v2 = v2 - (x[1] - 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] + 1)^2 + (x[2] + 1)^2)
+    v1 = v1 - (x[2] + 1) * r * exp(-r^2*5)
+    v2 = v2 + (x[1] + 1) * r * exp(-r^2*5)
+
+    v3 = 0
+
     rho = 1.0
-    v1 = x[1]/2
-    v2 = -x[2]/2
-    v3 = 0.0
-    p = rho^equations.gamma
-    B1 = -x[1]/2 + x[2]
-    B2 = x[1] + x[2]/2
-    B3 = 0.0
+    p = 1.0   # total pressure balance p+B^2/2 = const
+
     psi = 0.0
 
     return prim2cons(SVector(rho, v1, v2, v3, p, B1, B2, B3, psi), equations)
@@ -48,6 +130,7 @@ semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver, 
 
 # Create ODE problem with time span from 0.0 to 8.0.
 tspan = (0.0, 20.0)
+# tspan = (0.0, 0.0)
 ode = semidiscretize(semi, tspan)
 
 # At the beginning of the main loop, the SummaryCallback prints a summary of the simulation setup
