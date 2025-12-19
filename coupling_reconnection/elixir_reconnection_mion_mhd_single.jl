@@ -32,6 +32,57 @@ function initial_condition_reconnection(x, t, equations::IdealGlmMhdMultiIonEqua
                      equations)
 end
 
+function initial_condition_reconnection(x, t, equations::IdealGlmMhdMultiIonEquations2D)
+    # Add the bottom magnetic ring (clockwise)
+    r = sqrt(x[1]^2 + (x[2] - 1)^2)
+    B1 = (x[2] - 1) * r * exp(-r^2*5)
+    B2 = -x[1] * r * exp(-r^2*5)
+
+    # Add the bottom magnetic ring (clockwise)
+    r = sqrt(x[1]^2 + (x[2] + 1)^2)
+    B1 = B1 + (x[2] + 1) * r * exp(-r^2*5)
+    B2 = B2 - x[1] * r * exp(-r^2*5)
+
+    B3 = 0
+
+    # Add a velocity that pushes the magnetic field towards the center in y
+    # and outwards in x.
+    r = sqrt((x[1] - 1)^2 + (x[2] - 1)^2)
+    v1 = -(x[2] - 1) * r * exp(-r^2*5)
+    v2 = (x[1] - 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] + 1)^2 + (x[2] - 1)^2)
+    v1 = v1 + (x[2] - 1) * r * exp(-r^2*5)
+    v2 = v2 - (x[1] + 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] - 1)^2 + (x[2] + 1)^2)
+    v1 = v1 + (x[2] + 1) * r * exp(-r^2*5)
+    v2 = v2 - (x[1] - 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] + 1)^2 + (x[2] + 1)^2)
+    v1 = v1 - (x[2] + 1) * r * exp(-r^2*5)
+    v2 = v2 + (x[1] + 1) * r * exp(-r^2*5)
+
+    v3 = 0
+
+    v11 = v1
+    v21 = v1
+    v12 = v2
+    v22 = v2
+    v13 = v3
+    v23 = v3
+
+    rho1 = 1.0
+    rho2 = 1.0
+    p1 = 2.0
+    p2 = 1.0
+
+    psi = 0.0
+
+    return prim2cons(SVector(B1, B2, B3, rho1, v11, v12, v13, p1, rho2, v21, v22, v23, p2, psi),
+                     equations)
+end
+
 # Return the electron pressure for a constant electron temperature Te = 1 keV
 function electron_pressure_constantTe(u, equations::IdealGlmMhdMultiIonEquations2D)
     @unpack charge_to_mass = equations
