@@ -145,7 +145,7 @@ surface_flux = (flux_lax_friedrichs, flux_nonconservative_central)
 solver = DGSEM(polydeg = 3, surface_flux = surface_flux,
                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 
-cells_per_dimension_parent = (64, 64)
+cells_per_dimension_parent = (128, 128)
 coordinates_min = (-3.0, -3.0)
 coordinates_max = (3.0, 3.0)
 # We use a very coarse mesh because this is a 0-dimensional case
@@ -172,7 +172,7 @@ summary_callback = SummaryCallback()
 # Define the CFL condition.
 cfl = 0.01
 
-analysis_interval = 10000
+analysis_interval = 1000
 analysis_callback = AnalysisCallback(semi,
                                      save_analysis = true,
                                      interval = analysis_interval,
@@ -185,7 +185,7 @@ stepsize_callback = StepsizeCallback(cfl = cfl) # Very small CFL due to the stif
 # The Generalized Lagrange Method divergence cleans the magnetic field.
 glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl)
 
-save_solution = SaveSolutionCallback(interval=1,
+save_solution = SaveSolutionCallback(interval=100,
                                      save_initial_solution=true,
                                      save_final_solution=true,
                                      output_directory="out",
