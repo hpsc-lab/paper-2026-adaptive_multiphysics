@@ -205,7 +205,7 @@ semi_bottom = SemidiscretizationHyperbolic(mesh_bottom, equations_mhd,
                                            boundary_conditions=boundary_conditions_bottom)
 
 solver_middle = DGSEM(polydeg = 3, surface_flux = surface_flux_mion,
-                      volume_integral = VolumeIntegralFluxDifferencing(volume_flux_moin))
+                      volume_integral = VolumeIntegralFluxDifferencing(volume_flux_mion))
 boundary_conditions_middle = (x_neg=BoundaryConditionDirichlet(initial_condition_mionmhd),
                               x_pos=BoundaryConditionDirichlet(initial_condition_mionmhd),
                               y_neg=BoundaryConditionCoupled(1, (:i_forward, :end), Float64, coupling_function_mhd_mion),
