@@ -216,7 +216,7 @@ semi_middle = SemidiscretizationHyperbolic(mesh_middle, equations_mion,
 
 solver_top = DGSEM(polydeg = 3, surface_flux = surface_flux_mhd,
                    volume_integral = VolumeIntegralFluxDifferencing(volume_flux_mhd))
-boundary_conditions_top = (x_neg=BoundaryConditionDirichlet(initial_condition_mhd),
+boundary_conditions_top = (; x_neg=BoundaryConditionDirichlet(initial_condition_mhd),
                            x_pos=BoundaryConditionDirichlet(initial_condition_mhd),
                            y_neg=BoundaryConditionCoupled(2, (:i_forward, :end), Float64, coupling_function_mion_mhd),
                            y_pos=BoundaryConditionDirichlet(initial_condition_mhd),)
@@ -225,7 +225,7 @@ semi_top = SemidiscretizationHyperbolic(mesh_top, equations_mhd,
                                         boundary_conditions=boundary_conditions_top)
 
 # coupled semidiscretization.
-semi = SemidiscretizationCoupled(solver_bottom, solver_middle, solver_top)
+semi = SemidiscretizationCoupled(semi_bottom, semi_middle, semi_top)
 
 ###############################################################################
 # ODE solvers, callbacks etc.
@@ -240,6 +240,11 @@ summary_callback = SummaryCallback()
 cfl = 0.01
 
 analysis_interval = 10000
+# analysis_callback_bottom = AnalysisCallback(semi_bottom, interval = 100)
+# analysis_callback_middle = AnalysisCallback(semi_middle, interval = 100)
+# analysis_callback_top = AnalysisCallback(semi_top, interval = 100)
+# analysis_callback = AnalysisCallbackCoupled(semi, analysis_callback_bottom,
+#                                             analysis_callback_middle, analysis_callback_top)
 # analysis_callback = AnalysisCallback(semi,
 #                                      save_analysis = true,
 #                                      interval = analysis_interval,
@@ -251,7 +256,7 @@ alive_callback = AliveCallback(analysis_interval = analysis_interval)
 stepsize_callback = StepsizeCallback(cfl = cfl) # Very small CFL due to the stiff source terms
 
 # The Generalized Lagrange Method divergence cleans the magnetic field.
-glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl, semi_indices=[1, 2, 3, 4, 5, 6, 7, 8, 9])
+glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl, semi_indices=[1, 2, 3])
 
 save_solution = SaveSolutionCallback(interval=100,
                                      save_initial_solution=true,
