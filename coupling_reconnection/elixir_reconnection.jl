@@ -11,40 +11,26 @@ Define the initial condition for the MHD domain as two magnetic flux rings
 that are being pushed against each other.
 """
 function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
-    # Add the bottom magnetic ring (clockwise)
-    r = sqrt(x[1]^2 + (x[2] - 1)^2)
-    B1 = (x[2] - 1) * r * exp(-r^2*5)
-    B2 = -x[1] * r * exp(-r^2*5)
+    # https://arxiv.org/pdf/2510.01060
+    delta = 0.1 # Current sheet thickness.
+    Bz = 0.5 # Guiding magnetic field.
+    beta = 1.0 # Magnetic beta.
 
-    # Add the bottom magnetic ring (clockwise)
-    r = sqrt(x[1]^2 + (x[2] + 1)^2)
-    B1 = B1 + (x[2] + 1) * r * exp(-r^2*5)
-    B2 = B2 - x[1] * r * exp(-r^2*5)
+    B1 = -cos(pi*x[1])*cos(2*pi*x[2])*tanh(x[2]/delta) -
+        (1 - tanh(x[2]/delta)^2)*sin(2*pi*x[2])*cos(pi*x[1])/(2*pi*delta)
+    B2 = -sin(pi*x[1])*sin(2*pi*x[2])*tanh(x[2]/delta)/2
+    B3 = Bz
 
-    B3 = 0
+    p_mag = (B1^2 + B2^2 + B3^2)/2
+    p_thermal = 2*beta*p_mag
+    p = p_thermal + p_mag
 
-    # Add a velocity that pushes the magnetic field towards the center in y
-    # and outwards in x.
-    r = sqrt((x[1] - 1)^2 + (x[2] - 1)^2)
-    v1 = -(x[2] - 1) * r * exp(-r^2*5)
-    v2 = (x[1] - 1) * r * exp(-r^2*5)
+    rho = p
 
-    r = sqrt((x[1] + 1)^2 + (x[2] - 1)^2)
-    v1 = v1 + (x[2] - 1) * r * exp(-r^2*5)
-    v2 = v2 - (x[1] + 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] - 1)^2 + (x[2] + 1)^2)
-    v1 = v1 + (x[2] + 1) * r * exp(-r^2*5)
-    v2 = v2 - (x[1] - 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] + 1)^2 + (x[2] + 1)^2)
-    v1 = v1 - (x[2] + 1) * r * exp(-r^2*5)
-    v2 = v2 + (x[1] + 1) * r * exp(-r^2*5)
-
-    v3 = 0
-
-    rho = 1.0
-    p = 1.0   # total pressure balance p+B^2/2 = const
+    # Perturbation of the velocity.
+    v1 = 0.0
+    v2 = 0.0
+    v3 = 0.0
 
     psi = 0.0
 
@@ -52,51 +38,34 @@ function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
 end
 
 function initial_condition_mionmhd(x, t, equations::IdealGlmMhdMultiIonEquations2D)
-    # Add the bottom magnetic ring (clockwise)
-    r = sqrt(x[1]^2 + (x[2] - 1)^2)
-    B1 = (x[2] - 1) * r * exp(-r^2*5)
-    B2 = -x[1] * r * exp(-r^2*5)
+    # https://arxiv.org/pdf/2510.01060
+    delta = 0.1 # Current sheet thickness.
+    Bz = 0.5 # Guiding magnetic field.
+    beta = 1.0 # Magnetic beta.
 
-    # Add the bottom magnetic ring (clockwise)
-    r = sqrt(x[1]^2 + (x[2] + 1)^2)
-    B1 = B1 + (x[2] + 1) * r * exp(-r^2*5)
-    B2 = B2 - x[1] * r * exp(-r^2*5)
+    B1 = -cos(pi*x[1])*cos(2*pi*x[2])*tanh(x[2]/delta) -
+        (1 - tanh(x[2]/delta)^2)*sin(2*pi*x[2])*cos(pi*x[1])/(2*pi*delta)
+    B2 = -sin(pi*x[1])*sin(2*pi*x[2])*tanh(x[2]/delta)/2
+    B3 = Bz
 
-    B3 = 0
+    p_mag = (B1^2 + B2^2 + B3^2)/2
+    p_thermal = 2*beta*p_mag
+    p1 = (p_thermal + p_mag)/2
+    p2 = (p_thermal + p_mag)/2
 
-    # Add a velocity that pushes the magnetic field towards the center in y
-    # and outwards in x.
-    r = sqrt((x[1] - 1)^2 + (x[2] - 1)^2)
-    v1 = -(x[2] - 1) * r * exp(-r^2*5)
-    v2 = (x[1] - 1) * r * exp(-r^2*5)
+    rho1 = p1
+    rho2 = p2
 
-    r = sqrt((x[1] + 1)^2 + (x[2] - 1)^2)
-    v1 = v1 + (x[2] - 1) * r * exp(-r^2*5)
-    v2 = v2 - (x[1] + 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] - 1)^2 + (x[2] + 1)^2)
-    v1 = v1 + (x[2] + 1) * r * exp(-r^2*5)
-    v2 = v2 - (x[1] - 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] + 1)^2 + (x[2] + 1)^2)
-    v1 = v1 - (x[2] + 1) * r * exp(-r^2*5)
-    v2 = v2 + (x[1] + 1) * r * exp(-r^2*5)
-
-    v3 = 0
-
-    v11 = v1
-    v21 = v1
-    v12 = v2
-    v22 = v2
-    v13 = v3
-    v23 = v3
-
-    rho1 = 1.0
-    rho2 = 1.0
-    p1 = 2.0
-    p2 = 1.0
+    # Perturbation of the velocity.
+    v11 = 0.0
+    v12 = 0.0
+    v13 = 0.0
+    v21 = 0.0
+    v22 = 0.0
+    v23 = 0.0
 
     psi = 0.0
+
 
     return prim2cons(SVector(B1, B2, B3, rho1, v11, v12, v13, p1, rho2, v21, v22, v23, p2, psi),
                      equations)
@@ -158,8 +127,8 @@ end
 
 # Set up the parent domain.
 cells_per_dimension_parent = (50, 50)
-coordinates_min = (-3.0, -3.0)
-coordinates_max = (3.0, 3.0)
+coordinates_min = (-0.5, -0.5)
+coordinates_max = (0.5, 0.5)
 parent_mesh = StructuredMesh(cells_per_dimension_parent, coordinates_min, coordinates_max, periodicity=(false, false))
 
 # Setup up the mesh views.
