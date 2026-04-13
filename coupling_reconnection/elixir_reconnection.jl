@@ -27,10 +27,29 @@ function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
 
     rho = p
 
-    # Perturbation of the velocity.
-    v1 = 0.0
-    v2 = 0.0
+    # Add a velocity that pushes the magnetic field towards the center in y
+    # and outwards in x.
+    r = sqrt((x[1] - 1)^2 + (x[2] - 1)^2)
+    v1 = -(x[2] - 1) * r * exp(-r^2*5)
+    v2 = (x[1] - 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] + 1)^2 + (x[2] - 1)^2)
+    v1 = v1 + (x[2] - 1) * r * exp(-r^2*5)
+    v2 = v2 - (x[1] + 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] - 1)^2 + (x[2] + 1)^2)
+    v1 = v1 + (x[2] + 1) * r * exp(-r^2*5)
+    v2 = v2 - (x[1] - 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] + 1)^2 + (x[2] + 1)^2)
+    v1 = v1 - (x[2] + 1) * r * exp(-r^2*5)
+    v2 = v2 + (x[1] + 1) * r * exp(-r^2*5)
+
     v3 = 0.0
+
+    # Add a small Gaussian perturbation to the volicity field.
+    v1 += randn() * 1e-3
+    v2 += randn() * 1e-3
 
     psi = 0.0
 
@@ -57,15 +76,37 @@ function initial_condition_mionmhd(x, t, equations::IdealGlmMhdMultiIonEquations
     rho2 = p2
 
     # Perturbation of the velocity.
-    v11 = 0.0
-    v12 = 0.0
+    # Add a velocity that pushes the magnetic field towards the center in y
+    # and outwards in x.
+    r = sqrt((x[1] - 1)^2 + (x[2] - 1)^2)
+    v11 = -(x[2] - 1) * r * exp(-r^2*5)
+    v12 = (x[1] - 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] + 1)^2 + (x[2] - 1)^2)
+    v11 = v11 + (x[2] - 1) * r * exp(-r^2*5)
+    v12 = v12 - (x[1] + 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] - 1)^2 + (x[2] + 1)^2)
+    v11 = v11 + (x[2] + 1) * r * exp(-r^2*5)
+    v12 = v12 - (x[1] - 1) * r * exp(-r^2*5)
+
+    r = sqrt((x[1] + 1)^2 + (x[2] + 1)^2)
+    v11 = v11 - (x[2] + 1) * r * exp(-r^2*5)
+    v12 = v12 + (x[1] + 1) * r * exp(-r^2*5)
+
+    v21 = v11
+    v22 = v12
+
     v13 = 0.0
-    v21 = 0.0
-    v22 = 0.0
     v23 = 0.0
 
-    psi = 0.0
+    # Add a small Gaussian perturbation to the volicity field.
+    v11 += randn() * 1e-3
+    v12 += randn() * 1e-3
+    v21 += randn() * 1e-3
+    v22 += randn() * 1e-3
 
+    psi = 0.0
 
     return prim2cons(SVector(B1, B2, B3, rho1, v11, v12, v13, p1, rho2, v21, v22, v23, p2, psi),
                      equations)
