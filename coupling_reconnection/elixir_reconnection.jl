@@ -22,10 +22,10 @@ function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
     B3 = Bz
 
     p_mag = (B1^2 + B2^2 + B3^2)/2
-    p_thermal = 2*beta*p_mag
-    p = p_thermal + p_mag
+    p_thermal = beta*p_mag
+    p = p_thermal  # thermal pressure only; prim2cons adds B²/2 to energy internally
 
-    rho = p
+    rho = 1.0  # uniform background density; pressure balance is maintained via p_thermal
 
     # Add a velocity that pushes the magnetic field towards the center in y
     # and outwards in x.
@@ -47,9 +47,9 @@ function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
 
     v3 = 0.0
 
-    # Add a small Gaussian perturbation to the volicity field.
-    v1 += randn() * 1e-3
-    v2 += randn() * 1e-3
+    # Add a small deterministic perturbation to the velocity field.
+    v1 += 1e-3 * sin(2*pi*x[1]) * cos(pi*x[2])
+    v2 += 1e-3 * cos(pi*x[1]) * sin(2*pi*x[2])
 
     psi = 0.0
 
@@ -68,12 +68,12 @@ function initial_condition_mionmhd(x, t, equations::IdealGlmMhdMultiIonEquations
     B3 = Bz
 
     p_mag = (B1^2 + B2^2 + B3^2)/2
-    p_thermal = 2*beta*p_mag
-    p1 = (p_thermal + p_mag)/2
-    p2 = (p_thermal + p_mag)/2
+    p_thermal = beta*p_mag
+    p1 = p_thermal/2  # split thermal pressure equally between two species
+    p2 = p_thermal/2
 
-    rho1 = p1
-    rho2 = p2
+    rho1 = 0.5  # uniform background density split equally between species
+    rho2 = 0.5
 
     # Perturbation of the velocity.
     # Add a velocity that pushes the magnetic field towards the center in y
@@ -100,11 +100,11 @@ function initial_condition_mionmhd(x, t, equations::IdealGlmMhdMultiIonEquations
     v13 = 0.0
     v23 = 0.0
 
-    # Add a small Gaussian perturbation to the volicity field.
-    v11 += randn() * 1e-3
-    v12 += randn() * 1e-3
-    v21 += randn() * 1e-3
-    v22 += randn() * 1e-3
+    # Add a small deterministic perturbation to the velocity field.
+    v11 += 1e-3 * sin(2*pi*x[1]) * cos(pi*x[2])
+    v12 += 1e-3 * cos(pi*x[1]) * sin(2*pi*x[2])
+    v21 += 1e-3 * sin(2*pi*x[1]) * cos(pi*x[2])
+    v22 += 1e-3 * cos(pi*x[1]) * sin(2*pi*x[2])
 
     psi = 0.0
 
@@ -184,16 +184,21 @@ mesh_top = StructuredMeshView(parent_mesh;
                               indices_max = (50, 50))
 
 # Define the coupling functions.
+# Multi-ion → MHD: sum species densities, momenta, and energies; magnetic field is shared.
+# u (multi-ion conservative): [B1, B2, B3, ρ₁, ρ₁v₁₁, ρ₁v₁₂, ρ₁v₁₃, E₁,
+#                               ρ₂, ρ₂v₂₁, ρ₂v₂₂, ρ₂v₂₃, E₂, ψ]
 coupling_function_mion_mhd = (x, u, equations_other, equations_own) -> SVector(u[4] + u[9],
-                                                                               (u[4]*u[5] + u[9]*u[10])/(u[4] + u[9]),
-                                                                               (u[4]*u[6] + u[9]*u[11])/(u[4] + u[9]),
-                                                                               (u[4]*u[7] + u[9]*u[12])/(u[4] + u[9]),
+                                                                               u[5] + u[10],
+                                                                               u[6] + u[11],
+                                                                               u[7] + u[12],
                                                                                u[8] + u[13],
                                                                                u[1], u[2], u[3],
                                                                                u[14])
+# MHD → multi-ion: split mass and momentum equally between two species at shared bulk velocity.
+# u (MHD conservative): [ρ, ρv₁, ρv₂, ρv₃, E, B1, B2, B3, ψ]
 coupling_function_mhd_mion = (x, u, equations_other, equations_own) -> SVector(u[6], u[7], u[8],
-                                                                               u[1]/2, u[2], u[3], u[4], u[5]/2,
-                                                                               u[1]/2, u[2], u[3], u[4], u[5]/2,
+                                                                               u[1]/2, u[2]/2, u[3]/2, u[4]/2, u[5]/2,
+                                                                               u[1]/2, u[2]/2, u[3]/2, u[4]/2, u[5]/2,
                                                                                u[9])
 coupling_function_identity = (x, u, equations_other, equations_own) -> u
 
@@ -266,7 +271,7 @@ alive_callback = AliveCallback(analysis_interval = analysis_interval)
 stepsize_callback = StepsizeCallback(cfl = cfl) # Very small CFL due to the stiff source terms
 
 # The Generalized Lagrange Method divergence cleans the magnetic field.
-glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl, semi_indices=[1, 2, 3])
+glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl, semi_indices=[1, 3]) # semi 2 (mion) has GLM disabled
 
 save_solution = SaveSolutionCallback(interval=100,
                                      save_initial_solution=true,
