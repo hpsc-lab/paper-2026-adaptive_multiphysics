@@ -184,22 +184,31 @@ mesh_top = StructuredMeshView(parent_mesh;
                               indices_max = (50, 50))
 
 # Define the coupling functions.
-# Multi-ion → MHD: sum species densities, momenta, and energies; magnetic field is shared.
+#
+# Energy convention difference between the two equation systems:
+#   IdealGlmMhdEquations2D:          E = ρ|v|²/2 + p/(γ-1) + (B²+ψ²)/2   (includes magnetic energy)
+#   IdealGlmMhdMultiIonEquations2D:  Eₖ = ρₖ|vₖ|²/2 + pₖ/(γₖ-1)          (kinetic+internal only)
+# The magnetic energy (B²+ψ²)/2 is a shared field in the multi-ion system, not stored per species.
+# The coupling functions must add/subtract (B²+ψ²)/2 when crossing the interface.
+#
 # u (multi-ion conservative): [B1, B2, B3, ρ₁, ρ₁v₁₁, ρ₁v₁₂, ρ₁v₁₃, E₁,
 #                               ρ₂, ρ₂v₂₁, ρ₂v₂₂, ρ₂v₂₃, E₂, ψ]
-coupling_function_mion_mhd = (x, u, equations_other, equations_own) -> SVector(u[4] + u[9],
-                                                                               u[5] + u[10],
-                                                                               u[6] + u[11],
-                                                                               u[7] + u[12],
-                                                                               u[8] + u[13],
-                                                                               u[1], u[2], u[3],
-                                                                               u[14])
-# MHD → multi-ion: split mass and momentum equally between two species at shared bulk velocity.
+coupling_function_mion_mhd = (x, u, equations_other, equations_own) -> SVector(
+    u[4] + u[9],
+    u[5] + u[10],
+    u[6] + u[11],
+    u[7] + u[12],
+    u[8] + u[13] + (u[1]^2 + u[2]^2 + u[3]^2 + u[14]^2)/2,  # add shared magnetic energy
+    u[1], u[2], u[3],
+    u[14])
 # u (MHD conservative): [ρ, ρv₁, ρv₂, ρv₃, E, B1, B2, B3, ψ]
-coupling_function_mhd_mion = (x, u, equations_other, equations_own) -> SVector(u[6], u[7], u[8],
-                                                                               u[1]/2, u[2]/2, u[3]/2, u[4]/2, u[5]/2,
-                                                                               u[1]/2, u[2]/2, u[3]/2, u[4]/2, u[5]/2,
-                                                                               u[9])
+coupling_function_mhd_mion = (x, u, equations_other, equations_own) -> begin
+    E_nonmag = u[5] - (u[6]^2 + u[7]^2 + u[8]^2 + u[9]^2)/2  # strip magnetic energy before splitting
+    SVector(u[6], u[7], u[8],
+            u[1]/2, u[2]/2, u[3]/2, u[4]/2, E_nonmag/2,
+            u[1]/2, u[2]/2, u[3]/2, u[4]/2, E_nonmag/2,
+            u[9])
+end
 coupling_function_identity = (x, u, equations_other, equations_own) -> u
 
 # Entropy conservative volume numerical fluxes with standard LLF dissipation at interfaces
