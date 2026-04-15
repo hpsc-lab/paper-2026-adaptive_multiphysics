@@ -1,6 +1,32 @@
 using OrdinaryDiffEqSSPRK, OrdinaryDiffEqLowStorageRK
 using Trixi
 
+# Trixi does not yet implement shock capturing (VolumeIntegralShockCapturingHG) for
+# StructuredMeshView. The cache layout and computation are identical to StructuredMesh{2},
+# so we forward the missing dispatch methods to the parent StructuredMesh{2}.
+#
+# Note: calc_normalvectors_subcell_fv! and NormalVectorContainer2D dispatch on the mesh
+# type only for method selection; all actual data access goes through cache_containers,
+# which is specific to the StructuredMeshView. Forwarding to mesh.parent is therefore safe.
+import Trixi: create_cache, fv_kernel!
+
+@inline function Trixi.fv_kernel!(du, u, ::Type{<:StructuredMeshView{2}},
+                                  have_nonconservative_terms, equations,
+                                  volume_flux_fv, dg, cache, element, alpha = true)
+    Trixi.fv_kernel!(du, u, StructuredMesh{2},
+                    have_nonconservative_terms, equations,
+                    volume_flux_fv, dg, cache, element, alpha)
+end
+
+function Trixi.create_cache(mesh::StructuredMeshView{2}, equations,
+                             volume_integral::Trixi.AbstractVolumeIntegralSubcell,
+                             dg, cache_containers, uEltype)
+    # Forward to StructuredMesh{2} — NormalVectorContainer2D and create_f_threaded
+    # both read exclusively from cache_containers (not the mesh object), so using
+    # mesh.parent for dispatch while keeping the view's cache_containers is correct.
+    Trixi.create_cache(mesh.parent, equations, volume_integral, dg, cache_containers, uEltype)
+end
+
 """
 Adaptive coupling between a multi-ion MHD system and 2 MHD systems.
 """
@@ -203,7 +229,12 @@ coupling_function_mion_mhd = (x, u, equations_other, equations_own) -> SVector(
     u[14])
 # u (MHD conservative): [ρ, ρv₁, ρv₂, ρv₃, E, B1, B2, B3, ψ]
 coupling_function_mhd_mion = (x, u, equations_other, equations_own) -> begin
-    E_nonmag = u[5] - (u[6]^2 + u[7]^2 + u[8]^2 + u[9]^2)/2  # strip magnetic energy before splitting
+    B_sq_half = (u[6]^2 + u[7]^2 + u[8]^2 + u[9]^2) / 2
+    # E_nonmag = ρv²/2 + p/(γ-1) ≥ 0 physically, but the entropy-stable MHD scheme
+    # is NOT positivity-preserving: numerical oscillations can make B²/2 > E, giving
+    # negative thermal energy. Clamp to kinetic energy (guarantees p ≥ 0 per species).
+    KE = (u[2]^2 + u[3]^2 + u[4]^2) / (2 * max(u[1], eps(Float64)))
+    E_nonmag = max(u[5] - B_sq_half, KE)
     SVector(u[6], u[7], u[8],
             u[1]/2, u[2]/2, u[3]/2, u[4]/2, E_nonmag/2,
             u[1]/2, u[2]/2, u[3]/2, u[4]/2, E_nonmag/2,
@@ -217,9 +248,21 @@ surface_flux_mion = (flux_lax_friedrichs, flux_nonconservative_central)
 volume_flux_mhd = (flux_hindenlang_gassner, flux_nonconservative_powell)
 surface_flux_mhd = (flux_lax_friedrichs, flux_nonconservative_powell)
 
+# Shock capturing for the MHD domains: the entropy-stable Hindenlang-Gassner flux
+# is NOT positivity-preserving, so the MHD domains can develop negative pressure near
+# the coupling boundary. Using shock capturing with pressure as indicator prevents this.
+basis_mhd = LobattoLegendreBasis(3)
+indicator_mhd = IndicatorHennemannGassner(equations_mhd, basis_mhd;
+                                          alpha_max    = 1.0,
+                                          alpha_min    = 0.001,
+                                          alpha_smooth = false,
+                                          variable     = pressure)
+volume_integral_mhd = VolumeIntegralShockCapturingHG(indicator_mhd;
+                                                     volume_flux_dg = volume_flux_mhd,
+                                                     volume_flux_fv = surface_flux_mhd)
+
 # Define the semidisretizations.
-solver_bottom = DGSEM(polydeg = 3, surface_flux = surface_flux_mhd,
-                      volume_integral = VolumeIntegralFluxDifferencing(volume_flux_mhd))
+solver_bottom = DGSEM(basis_mhd, surface_flux_mhd, volume_integral_mhd)
 boundary_conditions_bottom = (x_neg=BoundaryConditionDirichlet(initial_condition_mhd),
                               x_pos=BoundaryConditionDirichlet(initial_condition_mhd),
                               y_neg=BoundaryConditionDirichlet(initial_condition_mhd),
@@ -228,8 +271,33 @@ semi_bottom = SemidiscretizationHyperbolic(mesh_bottom, equations_mhd,
                                            initial_condition_mhd, solver_bottom,
                                            boundary_conditions=boundary_conditions_bottom)
 
-solver_middle = DGSEM(polydeg = 3, surface_flux = surface_flux_mion,
-                      volume_integral = VolumeIntegralFluxDifferencing(volume_flux_mion))
+# Shock capturing for the mion domain: the reconnection X-point creates a current
+# singularity (p → 0, B → 0) that explicit ideal-MHD schemes cannot handle without
+# local dissipation. VolumeIntegralShockCapturingHG detects under-resolved cells via
+# modal energy decay (Hennemann & Gassner indicator) and blends in a first-order FV
+# scheme locally, providing just enough dissipation to prevent negative pressure.
+basis_middle = LobattoLegendreBasis(3)
+# Use total thermal pressure (p1 + p2) as the indicator variable.
+# At the reconnection X-point it is pressure (not density) that collapses to zero —
+# density can peak in the current sheet — so pressure is a more reliable trigger.
+# alpha_max = 1.0 allows full first-order FV fallback in cells where the indicator fires.
+function mion_total_pressure(u, ::IdealGlmMhdMultiIonEquations2D)
+    rho1 = max(u[4], eps(eltype(u))); E1 = u[8]
+    rho2 = max(u[9], eps(eltype(u))); E2 = u[13]
+    # p_k = (E_k - |ρv_k|²/(2ρ_k)) * (γ-1), γ = 5/3
+    KE1 = (u[5]^2 + u[6]^2 + u[7]^2) / (2 * rho1)
+    KE2 = (u[10]^2 + u[11]^2 + u[12]^2) / (2 * rho2)
+    return (E1 - KE1 + E2 - KE2) * (2/3)  # (γ-1) = 2/3
+end
+indicator_middle = IndicatorHennemannGassner(equations_mion, basis_middle;
+                                             alpha_max    = 1.0,
+                                             alpha_min    = 0.001,
+                                             alpha_smooth = false, # apply_smoothing! not implemented for StructuredMeshView
+                                             variable     = mion_total_pressure)
+volume_integral_middle = VolumeIntegralShockCapturingHG(indicator_middle;
+                                                        volume_flux_dg = volume_flux_mion,
+                                                        volume_flux_fv = surface_flux_mion)
+solver_middle = DGSEM(basis_middle, surface_flux_mion, volume_integral_middle)
 boundary_conditions_middle = (x_neg=BoundaryConditionDirichlet(initial_condition_mionmhd),
                               x_pos=BoundaryConditionDirichlet(initial_condition_mionmhd),
                               y_neg=BoundaryConditionCoupled(1, (:i_forward, :end), Float64, coupling_function_mhd_mion),
@@ -238,8 +306,7 @@ semi_middle = SemidiscretizationHyperbolic(mesh_middle, equations_mion,
                                            initial_condition_mionmhd, solver_middle,
                                            boundary_conditions=boundary_conditions_middle)
 
-solver_top = DGSEM(polydeg = 3, surface_flux = surface_flux_mhd,
-                   volume_integral = VolumeIntegralFluxDifferencing(volume_flux_mhd))
+solver_top = DGSEM(basis_mhd, surface_flux_mhd, volume_integral_mhd)
 boundary_conditions_top = (; x_neg=BoundaryConditionDirichlet(initial_condition_mhd),
                            x_pos=BoundaryConditionDirichlet(initial_condition_mhd),
                            y_neg=BoundaryConditionCoupled(2, (:i_forward, :end), Float64, coupling_function_mion_mhd),
@@ -296,7 +363,45 @@ callbacks = CallbackSet(summary_callback,
                         glm_speed_callback)
 
 ###############################################################################
+# Positivity-preserving stage limiter for the mion (middle) subdomain.
+#
+# At the reconnection X-point B→0 and p→0 simultaneously, so all wave speeds
+# vanish. LLF-FV shock capturing provides zero dissipation there, and the
+# Hennemann-Gassner indicator also gives zero alpha (smooth zero is not a shock).
+# We therefore apply the Zhang-Shu positivity limiter after each RK stage to
+# guarantee p1, p2 ≥ p_min throughout the mion domain.
+#
+# The limiter scales the cell mean toward the element mean to restore positivity
+# without destroying conservation.
+function mion_positivity_limiter!(u_ode, integrator, semi::SemidiscretizationCoupled, t)
+    semi_mion = semi.semis[2]  # middle mion domain is semi index 2
+    u_mion = Trixi.wrap_array(@view(u_ode[semi.u_indices[2]]), semi_mion)
+    mesh_mion, equations_mion, solver_mion, cache_mion = Trixi.mesh_equations_solver_cache(semi_mion)
 
-sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
+    # Minimum thermal pressure per ion species.  Chosen well above machine epsilon
+    # but small enough to be physically neutral (≈ 0.5% of initial minimum pressure).
+    p_min = 1e-4
+
+    # Conservative pressure extractors (u is conservative state at one node):
+    #   mion layout: [B1,B2,B3, ρ₁,ρ₁v₁₁,ρ₁v₁₂,ρ₁v₁₃,E₁, ρ₂,ρ₂v₂₁,ρ₂v₂₂,ρ₂v₂₃,E₂, ψ]
+    #   p_k = (E_k - |ρ_k v_k|² / (2ρ_k)) * (γ_k - 1)
+    function p1_cons(u, eq)
+        rho1 = max(u[4], eps(eltype(u)))
+        (u[8] - (u[5]^2 + u[6]^2 + u[7]^2) / (2 * rho1)) * (eq.gammas[1] - 1)
+    end
+    function p2_cons(u, eq)
+        rho2 = max(u[9], eps(eltype(u)))
+        (u[13] - (u[10]^2 + u[11]^2 + u[12]^2) / (2 * rho2)) * (eq.gammas[2] - 1)
+    end
+
+    Trixi.limiter_zhang_shu!(u_mion, p_min, p1_cons,
+                             mesh_mion, equations_mion, solver_mion, cache_mion)
+    Trixi.limiter_zhang_shu!(u_mion, p_min, p2_cons,
+                             mesh_mion, equations_mion, solver_mion, cache_mion)
+    return nothing
+end
+
+sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false,
+                                      stage_limiter! = mion_positivity_limiter!);
             dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
             ode_default_options()..., callback = callbacks);
