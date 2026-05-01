@@ -8,28 +8,133 @@ using Trixi
 # Note: calc_normalvectors_subcell_fv! and NormalVectorContainer2D dispatch on the mesh
 # type only for method selection; all actual data access goes through cache_containers,
 # which is specific to the StructuredMeshView. Forwarding to mesh.parent is therefore safe.
-import Trixi: create_cache, fv_kernel!
+import Trixi: create_cache, fv_kernel!, flux, max_abs_speed_naive,
+              flux_ruedaramirez_etal, flux_nonconservative_ruedaramirez_etal,
+              flux_nonconservative_central, AbstractVolumeIntegralSubcell
 
-@inline function Trixi.fv_kernel!(du, u, ::Type{<:StructuredMeshView{2}},
-                                  have_nonconservative_terms, equations,
-                                  volume_flux_fv, dg, cache, element, alpha = true)
-    Trixi.fv_kernel!(du, u, StructuredMesh{2},
-                    have_nonconservative_terms, equations,
-                    volume_flux_fv, dg, cache, element, alpha)
+# ── StructuredMeshView forwarding ──────────────────────────────────────────────
+# Trixi's create_cache for VolumeIntegralShockCapturingHG dispatches on
+# Union{TreeMesh{2}, StructuredMesh{2}, UnstructuredMesh2D, P4estMesh{2}, T8codeMesh{2}}
+# but is missing StructuredMeshView{2}. Forward to the parent StructuredMesh{2}.
+function Trixi.create_cache(mesh::StructuredMeshView{2}, equations,
+                             volume_integral::AbstractVolumeIntegralSubcell,
+                             dg, cache_containers, uEltype)
+    Trixi.create_cache(mesh.parent, equations, volume_integral, dg, cache_containers,
+                       uEltype)
 end
 
-function Trixi.create_cache(mesh::StructuredMeshView{2}, equations,
-                             volume_integral::Trixi.AbstractVolumeIntegralSubcell,
-                             dg, cache_containers, uEltype)
-    # Forward to StructuredMesh{2} — NormalVectorContainer2D and create_f_threaded
-    # both read exclusively from cache_containers (not the mesh object), so using
-    # mesh.parent for dispatch while keeping the view's cache_containers is correct.
-    Trixi.create_cache(mesh.parent, equations, volume_integral, dg, cache_containers, uEltype)
+# Same omission for fv_kernel! — calc_volume_integral! passes typeof(mesh), so
+# dispatch on ::Type{<:StructuredMeshView{2}} and forward to StructuredMesh{2}.
+@inline function Trixi.fv_kernel!(du, u,
+                                  ::Type{<:StructuredMeshView{2}},
+                                  have_nonconservative_terms, equations,
+                                  volume_flux_fv, dg::DGSEM, cache, element, alpha = true)
+    Trixi.fv_kernel!(du, u, StructuredMesh{2},
+                     have_nonconservative_terms, equations,
+                     volume_flux_fv, dg, cache, element, alpha)
+end
+
+# ── Normal-vector methods for IdealGlmMhdMultiIonEquations2D ──────────────────
+# The StructuredMesh flux_differencing_kernel! passes contravariant vectors
+# (AbstractVector) as the orientation argument, but the 2D multi-ion equations
+# only have Integer-orientation methods. For our uniform Cartesian mesh the
+# contravariant vectors are axis-aligned, so the linear combination below is
+# exact (f(u, n) = n₁·f(u, 1) + n₂·f(u, 2)).
+
+@inline function flux(u, normal_direction::AbstractVector,
+                      equations::IdealGlmMhdMultiIonEquations2D)
+    return (normal_direction[1] * flux(u, 1, equations) +
+            normal_direction[2] * flux(u, 2, equations))
+end
+
+# LLF uses max_abs_speed_naive(u_ll, u_rr, normal_direction, equations) directly
+# (without prior normalization in FluxPlusDissipation). For axis-aligned normals
+# n = (h,0) or (0,h) this reduces to h·λ_x or h·λ_y respectively.
+@inline function max_abs_speed_naive(u_ll, u_rr, normal_direction::AbstractVector,
+                                     equations::IdealGlmMhdMultiIonEquations2D)
+    return (abs(normal_direction[1]) * max_abs_speed_naive(u_ll, u_rr, 1, equations) +
+            abs(normal_direction[2]) * max_abs_speed_naive(u_ll, u_rr, 2, equations))
+end
+
+@inline function flux_ruedaramirez_etal(u_ll, u_rr, normal_direction::AbstractVector,
+                                        equations::IdealGlmMhdMultiIonEquations2D)
+    return (normal_direction[1] * flux_ruedaramirez_etal(u_ll, u_rr, 1, equations) +
+            normal_direction[2] * flux_ruedaramirez_etal(u_ll, u_rr, 2, equations))
+end
+
+@inline function flux_nonconservative_ruedaramirez_etal(u_ll, u_rr,
+                                                        normal_direction::AbstractVector,
+                                                        equations::IdealGlmMhdMultiIonEquations2D)
+    return (normal_direction[1] *
+            flux_nonconservative_ruedaramirez_etal(u_ll, u_rr, 1, equations) +
+            normal_direction[2] *
+            flux_nonconservative_ruedaramirez_etal(u_ll, u_rr, 2, equations))
+end
+
+@inline function flux_nonconservative_central(u_ll, u_rr, normal_direction::AbstractVector,
+                                              equations::IdealGlmMhdMultiIonEquations2D)
+    return (normal_direction[1] *
+            flux_nonconservative_central(u_ll, u_rr, 1, equations) +
+            normal_direction[2] *
+            flux_nonconservative_central(u_ll, u_rr, 2, equations))
 end
 
 """
 Adaptive coupling between a multi-ion MHD system and 2 MHD systems.
 """
+
+# ── Absorbing ψ boundary condition ────────────────────────────────────────────
+# BoundaryConditionDirichlet sets ψ=0 at physical boundaries (from initial_condition),
+# which creates a hard reflecting wall for GLM divergence-cleaning waves.  GLM waves
+# generated near the reconnection X-point propagate outward, hit this wall, and
+# reflect back into the domain, building up ψ ripples that eventually destabilise
+# the simulation.
+#
+# BoundaryConditionAbsorbingPsi is identical to BoundaryConditionDirichlet except
+# that ψ (always the LAST variable in both GLM equation systems) is taken from the
+# interior state rather than the reference state.  This is a zero-gradient (outflow)
+# BC for ψ, which lets GLM waves pass through without reflection.
+struct BoundaryConditionAbsorbingPsi{F}
+    boundary_value_function::F
+end
+
+@inline function (bc::BoundaryConditionAbsorbingPsi)(u_inner, orientation_or_normal,
+                                                      direction, x, t,
+                                                      surface_flux_function, equations)
+    u_ref = bc.boundary_value_function(x, t, equations)
+    n = length(u_inner)
+    # Replace last variable (ψ) with interior value; keep all other reference values.
+    u_boundary = SVector(ntuple(Val(n)) do i
+        i < n ? u_ref[i] : u_inner[n]
+    end)
+    if iseven(direction) # u_inner is "left", u_boundary is "right"
+        return surface_flux_function(u_inner, u_boundary, orientation_or_normal, equations)
+    else # u_boundary is "left", u_inner is "right"
+        return surface_flux_function(u_boundary, u_inner, orientation_or_normal, equations)
+    end
+end
+
+@inline function (bc::BoundaryConditionAbsorbingPsi)(u_inner, orientation_or_normal,
+                                                      direction, x, t,
+                                                      surface_flux_functions::Tuple,
+                                                      equations)
+    surface_flux_function, nonconservative_flux_function = surface_flux_functions
+    u_ref = bc.boundary_value_function(x, t, equations)
+    n = length(u_inner)
+    u_boundary = SVector(ntuple(Val(n)) do i
+        i < n ? u_ref[i] : u_inner[n]
+    end)
+    if iseven(direction)
+        flux = surface_flux_function(u_inner, u_boundary, orientation_or_normal, equations)
+        noncons_flux = nonconservative_flux_function(u_inner, u_boundary,
+                                                     orientation_or_normal, equations)
+    else
+        flux = surface_flux_function(u_boundary, u_inner, orientation_or_normal, equations)
+        noncons_flux = nonconservative_flux_function(u_inner, u_boundary,
+                                                     orientation_or_normal, equations)
+    end
+    return flux, noncons_flux
+end
 
 
 """
@@ -53,29 +158,9 @@ function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
 
     rho = 1.0  # uniform background density; pressure balance is maintained via p_thermal
 
-    # Add a velocity that pushes the magnetic field towards the center in y
-    # and outwards in x.
-    r = sqrt((x[1] - 1)^2 + (x[2] - 1)^2)
-    v1 = -(x[2] - 1) * r * exp(-r^2*5)
-    v2 = (x[1] - 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] + 1)^2 + (x[2] - 1)^2)
-    v1 = v1 + (x[2] - 1) * r * exp(-r^2*5)
-    v2 = v2 - (x[1] + 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] - 1)^2 + (x[2] + 1)^2)
-    v1 = v1 + (x[2] + 1) * r * exp(-r^2*5)
-    v2 = v2 - (x[1] - 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] + 1)^2 + (x[2] + 1)^2)
-    v1 = v1 - (x[2] + 1) * r * exp(-r^2*5)
-    v2 = v2 + (x[1] + 1) * r * exp(-r^2*5)
-
+    v1 = 1e-2 * sin(2*pi*x[1]) * cos(pi*x[2])
+    v2 = 1e-2 * cos(pi*x[1]) * sin(2*pi*x[2])
     v3 = 0.0
-
-    # Add a small deterministic perturbation to the velocity field.
-    v1 += 1e-3 * sin(2*pi*x[1]) * cos(pi*x[2])
-    v2 += 1e-3 * cos(pi*x[1]) * sin(2*pi*x[2])
 
     psi = 0.0
 
@@ -101,36 +186,12 @@ function initial_condition_mionmhd(x, t, equations::IdealGlmMhdMultiIonEquations
     rho1 = 0.5  # uniform background density split equally between species
     rho2 = 0.5
 
-    # Perturbation of the velocity.
-    # Add a velocity that pushes the magnetic field towards the center in y
-    # and outwards in x.
-    r = sqrt((x[1] - 1)^2 + (x[2] - 1)^2)
-    v11 = -(x[2] - 1) * r * exp(-r^2*5)
-    v12 = (x[1] - 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] + 1)^2 + (x[2] - 1)^2)
-    v11 = v11 + (x[2] - 1) * r * exp(-r^2*5)
-    v12 = v12 - (x[1] + 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] - 1)^2 + (x[2] + 1)^2)
-    v11 = v11 + (x[2] + 1) * r * exp(-r^2*5)
-    v12 = v12 - (x[1] - 1) * r * exp(-r^2*5)
-
-    r = sqrt((x[1] + 1)^2 + (x[2] + 1)^2)
-    v11 = v11 - (x[2] + 1) * r * exp(-r^2*5)
-    v12 = v12 + (x[1] + 1) * r * exp(-r^2*5)
-
+    v11 = 1e-2 * sin(2*pi*x[1]) * cos(pi*x[2])
+    v12 = 1e-2 * cos(pi*x[1]) * sin(2*pi*x[2])
     v21 = v11
     v22 = v12
-
     v13 = 0.0
     v23 = 0.0
-
-    # Add a small deterministic perturbation to the velocity field.
-    v11 += 1e-3 * sin(2*pi*x[1]) * cos(pi*x[2])
-    v12 += 1e-3 * cos(pi*x[1]) * sin(2*pi*x[2])
-    v21 += 1e-3 * sin(2*pi*x[1]) * cos(pi*x[2])
-    v22 += 1e-3 * cos(pi*x[1]) * sin(2*pi*x[2])
 
     psi = 0.0
 
@@ -162,10 +223,10 @@ function electron_temperature_constantTe(u, equations::IdealGlmMhdMultiIonEquati
 end
 
 # Define the two set of partial differential equations.
-equations_mhd = IdealGlmMhdEquations2D(5/3)
+equations_mhd = IdealGlmMhdEquations2D(5/3, initial_c_h = 1.0)
 equations_mion = IdealGlmMhdMultiIonEquations2D(gammas = (5 / 3, 5 / 3),
-                                                charge_to_mass = (76.3049060157692000,
-                                                                  76.3049060157692000), # [nondimensional]
+                                                charge_to_mass = (25.0,
+                                                                  25.0), # [nondimensional] reduced from 76.3 → d_i=1/25=0.04 > Δy=0.01 (4 cells/d_i)
                                                 gas_constants = (1.0, 1.0), # [nondimensional]
                                                 molar_masses = (1.0, 1.0), # [nondimensional]
                                                 ion_ion_collision_constants = [0.0 0.4079382480442680;
@@ -174,7 +235,7 @@ equations_mion = IdealGlmMhdMultiIonEquations2D(gammas = (5 / 3, 5 / 3),
                                                                                  8.56368379833E-06), # [nondimensional] (computed with eq (9) of Ghosh et al. (2019))
                                                 electron_pressure = electron_pressure_constantTe,
                                                 electron_temperature = electron_temperature_constantTe,
-                                                initial_c_h = 0.0) # Deactivate GLM divergence cleaning
+                                                initial_c_h = 1.0) # Initial GLM speed; updated each step by GlmSpeedCallback
 
 # Temperature of ion 1
 function temperature1(u, equations::IdealGlmMhdMultiIonEquations2D)
@@ -193,52 +254,69 @@ function temperature2(u, equations::IdealGlmMhdMultiIonEquations2D)
 end
 
 # Set up the parent domain.
-cells_per_dimension_parent = (50, 50)
+# Resolution note: the ion skin depth d_i = 1/charge_to_mass ≈ 1/76.3 ≈ 0.013.
+# The Hall physics that regularizes the X-point singularity requires Δy < d_i.
+# With 100 cells in y (Δy = 0.01) the mion domain (30 cells) achieves Δy < d_i,
+# allowing the Hall diffusion region to form instead of driving a singularity.
+cells_per_dimension_parent = (100, 200)
 coordinates_min = (-0.5, -0.5)
 coordinates_max = (0.5, 0.5)
 parent_mesh = StructuredMesh(cells_per_dimension_parent, coordinates_min, coordinates_max, periodicity=(false, false))
 
 # Setup up the mesh views.
+# Physical y-extents: bottom [-0.5, -0.15], middle [-0.15, 0.15], top [0.15, 0.5]
+# (mion domain is widened from ±0.1 to ±0.15 to give 60 cells at Δy=0.005)
 mesh_bottom = StructuredMeshView(parent_mesh;
                                  indices_min = (1, 1),
-                                 indices_max = (50, 20))
+                                 indices_max = (100, 70))
 mesh_middle = StructuredMeshView(parent_mesh;
-                                 indices_min = (1, 21),
-                                 indices_max = (50, 30))
+                                 indices_min = (1, 71),
+                                 indices_max = (100, 130))
 mesh_top = StructuredMeshView(parent_mesh;
-                              indices_min = (1, 31),
-                              indices_max = (50, 50))
+                              indices_min = (1, 131),
+                              indices_max = (100, 200))
 
 # Define the coupling functions.
 #
 # Energy convention difference between the two equation systems:
-#   IdealGlmMhdEquations2D:          E = ρ|v|²/2 + p/(γ-1) + (B²+ψ²)/2   (includes magnetic energy)
+#   IdealGlmMhdEquations2D:          E = ρ|v|²/2 + p/(γ-1) + (B²+ψ²)/2   (includes B and ψ energy)
 #   IdealGlmMhdMultiIonEquations2D:  Eₖ = ρₖ|vₖ|²/2 + pₖ/(γₖ-1)          (kinetic+internal only)
-# The magnetic energy (B²+ψ²)/2 is a shared field in the multi-ion system, not stored per species.
-# The coupling functions must add/subtract (B²+ψ²)/2 when crossing the interface.
+# The magnetic energy B²/2 is shared in the multi-ion system (not per species).
+# ψ is a purely numerical GLM auxiliary variable — NOT physical magnetic energy.
+# When crossing the interface we add/subtract B²/2 only (NOT ψ²/2).
 #
 # u (multi-ion conservative): [B1, B2, B3, ρ₁, ρ₁v₁₁, ρ₁v₁₂, ρ₁v₁₃, E₁,
 #                               ρ₂, ρ₂v₂₁, ρ₂v₂₂, ρ₂v₂₃, E₂, ψ]
-coupling_function_mion_mhd = (x, u, equations_other, equations_own) -> SVector(
-    u[4] + u[9],
-    u[5] + u[10],
-    u[6] + u[11],
-    u[7] + u[12],
-    u[8] + u[13] + (u[1]^2 + u[2]^2 + u[3]^2 + u[14]^2)/2,  # add shared magnetic energy
-    u[1], u[2], u[3],
-    u[14])
+coupling_function_mion_mhd = (x, u, equations_other, equations_own) -> begin
+    rho1 = max(u[4], eps(eltype(u)))
+    rho2 = max(u[9], eps(eltype(u)))
+    rho_total = rho1 + rho2
+    mv1 = u[5] + u[10]
+    mv2 = u[6] + u[11]
+    mv3 = u[7] + u[12]
+    # Individual species KEs (needed to extract thermal pressure from each E_k)
+    KE1 = (u[5]^2 + u[6]^2 + u[7]^2) / (2 * rho1)
+    KE2 = (u[10]^2 + u[11]^2 + u[12]^2) / (2 * rho2)
+    # Centre-of-mass KE using total momentum (< KE1+KE2 when species velocities differ)
+    KE_CM = (mv1^2 + mv2^2 + mv3^2) / (2 * rho_total)
+    # E_MHD = p_total/(γ-1) + KE_CM + B²/2
+    # p_total/(γ-1) = (E₁-KE₁) + (E₂-KE₂)  [mion Eₖ = KE_k + thermal_k]
+    E_MHD = (u[8] - KE1) + (u[13] - KE2) + KE_CM + (u[1]^2 + u[2]^2 + u[3]^2)/2
+    SVector(rho_total, mv1, mv2, mv3, E_MHD, u[1], u[2], u[3], zero(eltype(u)))
+end
 # u (MHD conservative): [ρ, ρv₁, ρv₂, ρv₃, E, B1, B2, B3, ψ]
 coupling_function_mhd_mion = (x, u, equations_other, equations_own) -> begin
-    B_sq_half = (u[6]^2 + u[7]^2 + u[8]^2 + u[9]^2) / 2
-    # E_nonmag = ρv²/2 + p/(γ-1) ≥ 0 physically, but the entropy-stable MHD scheme
-    # is NOT positivity-preserving: numerical oscillations can make B²/2 > E, giving
-    # negative thermal energy. Clamp to kinetic energy (guarantees p ≥ 0 per species).
+    # Strip B²/2 from MHD energy to get the non-magnetic energy for each species.
+    # ψ²/2 is NOT subtracted: ψ is a numerical GLM variable, not physical magnetic energy.
+    B_sq_half = (u[6]^2 + u[7]^2 + u[8]^2) / 2
+    # Clamp to kinetic energy to guarantee p ≥ 0 if the entropy-stable scheme
+    # has produced a slightly negative pressure near the interface.
     KE = (u[2]^2 + u[3]^2 + u[4]^2) / (2 * max(u[1], eps(Float64)))
     E_nonmag = max(u[5] - B_sq_half, KE)
     SVector(u[6], u[7], u[8],
-            u[1]/2, u[2]/2, u[3]/2, u[4]/2, E_nonmag/2,
-            u[1]/2, u[2]/2, u[3]/2, u[4]/2, E_nonmag/2,
-            u[9])
+            u[1]/2, u[2]/2, u[3]/2, u[4]/2, E_nonmag/2,  # species 1: half of total
+            u[1]/2, u[2]/2, u[3]/2, u[4]/2, E_nonmag/2,  # species 2: half of total
+            zero(eltype(u)))                                # ψ = 0: absorbing at interface
 end
 coupling_function_identity = (x, u, equations_other, equations_own) -> u
 
@@ -261,15 +339,40 @@ volume_integral_mhd = VolumeIntegralShockCapturingHG(indicator_mhd;
                                                      volume_flux_dg = volume_flux_mhd,
                                                      volume_flux_fv = surface_flux_mhd)
 
+# ── Dedner parabolic GLM damping ──────────────────────────────────────────────
+# Plain hyperbolic GLM transports ∇·B errors to the boundary at speed c_h.
+# Adding the parabolic term ∂ψ/∂t = -ψ/τ (Dedner 2002) also damps ψ in the
+# interior, making cleaning effective even far from the outflow boundaries.
+# τ = L/c_h: ψ decays by 1/e in the time a GLM wave crosses the domain (L=0.5).
+# ψ is always the last variable in both GLM equation systems.
+function source_terms_glm_damping(u, x, t, equations::IdealGlmMhdEquations2D)
+    L = 0.5f0
+    nv = nvariables(equations)
+    rate = equations.c_h / L
+    return SVector(ntuple(Val(nv)) do i
+        i == nv ? -rate * u[i] : zero(eltype(u))
+    end)
+end
+
+function source_terms_glm_damping(u, x, t, equations::IdealGlmMhdMultiIonEquations2D)
+    L = 0.5f0
+    nv = nvariables(equations)
+    rate = equations.c_h / L
+    return SVector(ntuple(Val(nv)) do i
+        i == nv ? -rate * u[i] : zero(eltype(u))
+    end)
+end
+
 # Define the semidisretizations.
 solver_bottom = DGSEM(basis_mhd, surface_flux_mhd, volume_integral_mhd)
-boundary_conditions_bottom = (x_neg=BoundaryConditionDirichlet(initial_condition_mhd),
-                              x_pos=BoundaryConditionDirichlet(initial_condition_mhd),
-                              y_neg=BoundaryConditionDirichlet(initial_condition_mhd),
+boundary_conditions_bottom = (x_neg=BoundaryConditionAbsorbingPsi(initial_condition_mhd),
+                              x_pos=BoundaryConditionAbsorbingPsi(initial_condition_mhd),
+                              y_neg=BoundaryConditionAbsorbingPsi(initial_condition_mhd),
                               y_pos=BoundaryConditionCoupled(2, (:i_forward, :begin), Float64, coupling_function_mion_mhd),)
 semi_bottom = SemidiscretizationHyperbolic(mesh_bottom, equations_mhd,
                                            initial_condition_mhd, solver_bottom,
-                                           boundary_conditions=boundary_conditions_bottom)
+                                           boundary_conditions=boundary_conditions_bottom,
+                                           source_terms=source_terms_glm_damping)
 
 # Shock capturing for the mion domain: the reconnection X-point creates a current
 # singularity (p → 0, B → 0) that explicit ideal-MHD schemes cannot handle without
@@ -298,22 +401,24 @@ volume_integral_middle = VolumeIntegralShockCapturingHG(indicator_middle;
                                                         volume_flux_dg = volume_flux_mion,
                                                         volume_flux_fv = surface_flux_mion)
 solver_middle = DGSEM(basis_middle, surface_flux_mion, volume_integral_middle)
-boundary_conditions_middle = (x_neg=BoundaryConditionDirichlet(initial_condition_mionmhd),
-                              x_pos=BoundaryConditionDirichlet(initial_condition_mionmhd),
+boundary_conditions_middle = (x_neg=BoundaryConditionAbsorbingPsi(initial_condition_mionmhd),
+                              x_pos=BoundaryConditionAbsorbingPsi(initial_condition_mionmhd),
                               y_neg=BoundaryConditionCoupled(1, (:i_forward, :end), Float64, coupling_function_mhd_mion),
                               y_pos=BoundaryConditionCoupled(3, (:i_forward, :begin), Float64, coupling_function_mhd_mion),)
 semi_middle = SemidiscretizationHyperbolic(mesh_middle, equations_mion,
                                            initial_condition_mionmhd, solver_middle,
-                                           boundary_conditions=boundary_conditions_middle)
+                                           boundary_conditions=boundary_conditions_middle,
+                                           source_terms=source_terms_glm_damping)
 
 solver_top = DGSEM(basis_mhd, surface_flux_mhd, volume_integral_mhd)
-boundary_conditions_top = (; x_neg=BoundaryConditionDirichlet(initial_condition_mhd),
-                           x_pos=BoundaryConditionDirichlet(initial_condition_mhd),
+boundary_conditions_top = (; x_neg=BoundaryConditionAbsorbingPsi(initial_condition_mhd),
+                           x_pos=BoundaryConditionAbsorbingPsi(initial_condition_mhd),
                            y_neg=BoundaryConditionCoupled(2, (:i_forward, :end), Float64, coupling_function_mion_mhd),
-                           y_pos=BoundaryConditionDirichlet(initial_condition_mhd),)
+                           y_pos=BoundaryConditionAbsorbingPsi(initial_condition_mhd),)
 semi_top = SemidiscretizationHyperbolic(mesh_top, equations_mhd,
                                         initial_condition_mhd, solver_top,
-                                        boundary_conditions=boundary_conditions_top)
+                                        boundary_conditions=boundary_conditions_top,
+                                        source_terms=source_terms_glm_damping)
 
 # coupled semidiscretization.
 semi = SemidiscretizationCoupled(semi_bottom, semi_middle, semi_top)
@@ -328,7 +433,7 @@ ode = semidiscretize(semi, tspan)
 summary_callback = SummaryCallback()
 
 # Define the CFL condition.
-cfl = 0.01
+cfl = 0.1
 
 analysis_interval = 10000
 # analysis_callback_bottom = AnalysisCallback(semi_bottom, interval = 100)
@@ -347,7 +452,7 @@ alive_callback = AliveCallback(analysis_interval = analysis_interval)
 stepsize_callback = StepsizeCallback(cfl = cfl) # Very small CFL due to the stiff source terms
 
 # The Generalized Lagrange Method divergence cleans the magnetic field.
-glm_speed_callback = GlmSpeedCallback(glm_scale=0.5, cfl=cfl, semi_indices=[1, 3]) # semi 2 (mion) has GLM disabled
+glm_speed_callback = GlmSpeedCallback(glm_scale=0.9, cfl=cfl, semi_indices=[1, 2, 3]) # all three domains use GLM
 
 save_solution = SaveSolutionCallback(interval=100,
                                      save_initial_solution=true,
@@ -378,9 +483,12 @@ function mion_positivity_limiter!(u_ode, integrator, semi::SemidiscretizationCou
     u_mion = Trixi.wrap_array(@view(u_ode[semi.u_indices[2]]), semi_mion)
     mesh_mion, equations_mion, solver_mion, cache_mion = Trixi.mesh_equations_solver_cache(semi_mion)
 
-    # Minimum thermal pressure per ion species.  Chosen well above machine epsilon
-    # but small enough to be physically neutral (≈ 0.5% of initial minimum pressure).
-    p_min = 1e-4
+    # Minimum thermal pressure per ion species.  At p_min ≈ 5% of initial minimum
+    # pressure the limiter activates well before the catastrophic collapse at t≈0.32,
+    # giving the scheme multiple steps of correction margin.  A value of 1e-4 is too
+    # small: the 2N first-stage has no limiter call, so pressure can cross zero in
+    # that un-guarded first sub-step.
+    p_min = 1e-3
 
     # Conservative pressure extractors (u is conservative state at one node):
     #   mion layout: [B1,B2,B3, ρ₁,ρ₁v₁₁,ρ₁v₁₂,ρ₁v₁₃,E₁, ρ₂,ρ₂v₂₁,ρ₂v₂₂,ρ₂v₂₃,E₂, ψ]
