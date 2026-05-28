@@ -78,6 +78,54 @@ coupling_mhd_to_euler = (x, u, equations_other, equations_own) -> begin
 end
 
 ###############################################################################
+# Slip-wall boundary condition for IdealGlmMhdEquations2D.
+# Ghost state mirrors the wall-normal momentum (ρvₙ → -ρvₙ) and normal field
+# (Bₙ → -Bₙ), enforcing vₙ=0 and Bₙ=0 at the wall.  ψ is also negated so
+# GLM divergence-cleaning waves reflect rather than accumulate at the wall.
+###############################################################################
+
+struct BoundaryConditionSlipWallMHD end
+
+@inline function _mhd_slip_wall_ghost(u, orientation)
+    # MHD conservative: [ρ, ρv₁, ρv₂, ρv₃, E, B₁, B₂, B₃, ψ]
+    if orientation == 1  # x-normal wall: negate ρv₁, B₁, ψ
+        SVector(u[1], -u[2], u[3], u[4], u[5], -u[6], u[7], u[8], -u[9])
+    else                 # y-normal wall: negate ρv₂, B₂, ψ
+        SVector(u[1], u[2], -u[3], u[4], u[5], u[6], -u[7], u[8], -u[9])
+    end
+end
+
+@inline function (::BoundaryConditionSlipWallMHD)(u_inner, orientation_or_normal,
+                                                   direction, x, t,
+                                                   surface_flux_function,
+                                                   equations::IdealGlmMhdEquations2D)
+    u_ghost = _mhd_slip_wall_ghost(u_inner, orientation_or_normal)
+    if iseven(direction)
+        return surface_flux_function(u_inner, u_ghost, orientation_or_normal, equations)
+    else
+        return surface_flux_function(u_ghost, u_inner, orientation_or_normal, equations)
+    end
+end
+
+@inline function (::BoundaryConditionSlipWallMHD)(u_inner, orientation_or_normal,
+                                                   direction, x, t,
+                                                   surface_flux_functions::Tuple,
+                                                   equations::IdealGlmMhdEquations2D)
+    flux_fn, noncons_fn = surface_flux_functions
+    u_ghost = _mhd_slip_wall_ghost(u_inner, orientation_or_normal)
+    if iseven(direction)
+        flux_val     = flux_fn(u_inner, u_ghost, orientation_or_normal, equations)
+        noncons_flux = noncons_fn(u_inner, u_ghost, orientation_or_normal, equations)
+    else
+        flux_val     = flux_fn(u_ghost, u_inner, orientation_or_normal, equations)
+        noncons_flux = noncons_fn(u_inner, u_ghost, orientation_or_normal, equations)
+    end
+    return flux_val, noncons_flux
+end
+
+const boundary_condition_slip_wall_mhd = BoundaryConditionSlipWallMHD()
+
+###############################################################################
 # Absorbing ψ boundary condition (MHD physical boundaries only)
 ###############################################################################
 
@@ -224,12 +272,19 @@ solver_euler = DGSEM(polydeg = 3, surface_flux = flux_lax_friedrichs,
 # Semidiscretizations
 ###############################################################################
 
-# Bottom (MHD / metallic): absorbing walls, coupled at y_pos
-# Coupled BC receives Euler state → returns MHD ghost via coupling_euler_to_mhd
+# Identity coupling functions for periodic x boundaries (self-coupling)
+coupling_identity_mhd   = (x, u, equations_other, equations_own) -> u
+coupling_identity_euler = (x, u, equations_other, equations_own) -> u
+
+# Bottom (MHD / metallic): periodic in x via self-coupling, slip wall at y_neg,
+# coupled to Euler at y_pos.
+# x_neg receives from own x_pos (semi index 1, :end in i) and vice versa.
 boundary_conditions_bottom = (
-    x_neg = BoundaryConditionAbsorbingPsi(initial_condition_mhd),
-    x_pos = BoundaryConditionAbsorbingPsi(initial_condition_mhd),
-    y_neg = BoundaryConditionAbsorbingPsi(initial_condition_mhd),
+    x_neg = BoundaryConditionCoupled(1, (:end,   :i_forward), Float64,
+                                     coupling_identity_mhd),
+    x_pos = BoundaryConditionCoupled(1, (:begin, :i_forward), Float64,
+                                     coupling_identity_mhd),
+    y_neg = boundary_condition_slip_wall_mhd,
     y_pos = BoundaryConditionCoupled(2, (:i_forward, :begin), Float64,
                                      coupling_euler_to_mhd),
 )
@@ -239,14 +294,16 @@ semi_bottom = SemidiscretizationHyperbolic(mesh_bottom, equations_mhd,
                                            boundary_conditions = boundary_conditions_bottom,
                                            source_terms = source_terms_glm_damping)
 
-# Top (Euler / molecular): Dirichlet walls, coupled at y_neg
-# Coupled BC receives MHD state → returns Euler ghost via coupling_mhd_to_euler
+# Top (Euler / molecular): periodic in x via self-coupling, slip wall at y_pos,
+# coupled to MHD at y_neg.
 boundary_conditions_top = (
-    x_neg = BoundaryConditionDirichlet(initial_condition_euler),
-    x_pos = BoundaryConditionDirichlet(initial_condition_euler),
+    x_neg = BoundaryConditionCoupled(2, (:end,   :i_forward), Float64,
+                                     coupling_identity_euler),
+    x_pos = BoundaryConditionCoupled(2, (:begin, :i_forward), Float64,
+                                     coupling_identity_euler),
     y_neg = BoundaryConditionCoupled(1, (:i_forward, :end), Float64,
                                      coupling_mhd_to_euler),
-    y_pos = BoundaryConditionDirichlet(initial_condition_euler),
+    y_pos = boundary_condition_slip_wall,
 )
 
 semi_top = SemidiscretizationHyperbolic(mesh_top, equations_euler,
