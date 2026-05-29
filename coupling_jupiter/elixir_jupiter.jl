@@ -18,23 +18,29 @@ using Random
 # domain starts at rest; all wave activity originates in the neutral layer above.
 #
 # Physical parameters (normalised units):
-#   Metallic H (MHD):    ρ=1, p=1, B₂=1 (radial/vertical field from dynamo)
-#                        c_s = √(5/3) ≈ 1.29,  v_A = 1.0,  c_fast ≈ 1.63
-#   Molecular H (Euler): ρ=1, p=1  (same density/pressure → zero equilibrium flux)
-#                        c_s = √(5/3) ≈ 1.29
+#   Metallic H (MHD):    ρ=1, p=1, c_s = √(5/3) ≈ 1.29
+#                        B field: weak seed field (B₀=1e-8), divergence-free,
+#                        linear profile satisfying the perfect-conductor BC at y=-0.5:
+#                          B_y = 2B₀(y+0.5)  →  0 at wall, B₀ at interface
+#                          B_x = -2B₀·x      →  exactly cancels ∂B_y/∂y
+#   Molecular H (Euler): ρ=1, p=1,  c_s = √(5/3) ≈ 1.29
 #
-# Equal densities and pressures across the interface are chosen so that the
-# coupling functions reproduce the background state exactly and generate no
-# spurious interface flux in the absence of waves.  A density jump (ρ_met > ρ_mol)
-# would be more realistic but breaks this exact equilibrium; the present setup
-# isolates the wave-mode conversion without numerical artifacts.
+# Equal densities and pressures give zero equilibrium flux at the interface.
+# The seed B field is so weak (B₀=1e-8) that |B|²/2 < machine-ε relative to
+# the O(1) energy, so the equilibrium energy balance is unaffected.
 ###############################################################################
 
 function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
     rho = 1.0
     v1  = 0.0; v2 = 0.0; v3 = 0.0
     p   = 1.0
-    B1  = 0.0; B2 = 1.0; B3 = 0.0  # radial guide field (dynamo-generated)
+    # Divergence-free seed field compatible with the perfect-conductor wall at y = -0.5.
+    # Linear B_y profile: 0 at the wall, B₀ at the coupling interface (y = 0).
+    # div(B) = ∂B_x/∂x + ∂B_y/∂y = -2B₀ + 2B₀ = 0  exactly.
+    B0  = 1e-8
+    B1  = -2 * B0 * x[1]           # compensates ∂B_y/∂y to enforce div B = 0
+    B2  =  2 * B0 * (x[2] + 0.5)   # 0 at y=-0.5, B₀ at y=0
+    B3  = 0.0
     psi = 0.0
     return prim2cons(SVector(rho, v1, v2, v3, p, B1, B2, B3, psi), equations)
 end
@@ -54,20 +60,21 @@ end
 # return a ghost state in ITS OWN variables.
 #
 # Euler conservative: [ρ, ρv₁, ρv₂, E_euler]
-#   E_euler = ρ(v₁²+v₂²)/2 + p/(γ-1)
 # MHD  conservative: [ρ, ρv₁, ρv₂, ρv₃, E_mhd, B₁, B₂, B₃, ψ]
-#   E_mhd = ρ|v|²/2 + p/(γ-1) + |B|²/2
 #
-# Equilibrium check (v=0, ρ=p=1, B₂=1):
-#   Euler→MHD ghost:  E = 1.5 + 0.5 = 2.0  ✓ matches MHD background
-#   MHD→Euler ghost:  E = 2.0 - 0.5 = 1.5  ✓ matches Euler background
+# The seed B field has |B|² ~ 1e-16, so |B|²/2 is below machine epsilon relative
+# to E ~ O(1).  The energy difference between Euler and MHD ghosts is negligible
+# and we omit the B²/2 correction to avoid introducing floating-point noise.
 ###############################################################################
 
-# Euler state → MHD ghost: complete with background radial field B₂=1
+# Euler state → MHD ghost: attach the seed B field at the coupling interface (y=0).
+# At y=0: B_y = B₀ = 1e-8, B_x = -2B₀·x[1]  (matches initial_condition_mhd at y=0).
 coupling_euler_to_mhd = (x, u, equations_other, equations_own) -> begin
     T  = eltype(u)
-    B2 = one(T)  # dynamo background field
-    SVector(u[1], u[2], u[3], zero(T), u[4] + B2^2 / 2, zero(T), B2, zero(T), zero(T))
+    B0 = convert(T, 1e-8)
+    B1 = -2 * B0 * convert(T, x[1])
+    B2 = B0
+    SVector(u[1], u[2], u[3], zero(T), u[4], B1, B2, zero(T), zero(T))
 end
 
 # MHD state → Euler ghost: strip magnetic energy and out-of-plane kinetic energy
