@@ -18,20 +18,23 @@ using Random
 # domain starts at rest; all wave activity originates in the neutral layer above.
 #
 # Physical parameters (normalised units):
-#   Metallic H (MHD):    ρ=1, p=1, c_s = √(5/3) ≈ 1.29
+#   Metallic H (MHD):    ρ=5, p=1, γ=5/3, c_s = √(γp/ρ) = √(1/3) ≈ 0.577
 #                        B field: weak seed field (B₀=1e-8), divergence-free,
 #                        linear profile satisfying the perfect-conductor BC at y=-0.5:
 #                          B_y = 2B₀(y+0.5)  →  0 at wall, B₀ at interface
 #                          B_x = -2B₀·x      →  exactly cancels ∂B_y/∂y
-#   Molecular H (Euler): ρ=1, p=1,  c_s = √(5/3) ≈ 1.29
+#   Molecular H (Euler): ρ=1, p=1, γ=7/5, c_s = √(γp/ρ) = √(1.4) ≈ 1.18
 #
-# Equal densities and pressures give zero equilibrium flux at the interface.
+# Density ratio ρ_metallic/ρ_molecular ≈ 5, consistent with interior models
+# (Guillot 1999; Militzer et al. 2022) at the ~0.85 R_J dynamo boundary.
+# Both layers start at p=1 with v=0, so the equilibrium flux is zero despite
+# the density jump (flux depends on p and v, not ρ, at rest).
 # The seed B field is so weak (B₀=1e-8) that |B|²/2 < machine-ε relative to
 # the O(1) energy, so the equilibrium energy balance is unaffected.
 ###############################################################################
 
 function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
-    rho = 1.0
+    rho = 5.0
     v1  = 0.0; v2 = 0.0; v3 = 0.0
     p   = 1.0
     # Divergence-free seed field compatible with the perfect-conductor wall at y = -0.5.
@@ -59,29 +62,59 @@ end
 # Rule: each domain's coupled BC receives the OTHER domain's state (u) and must
 # return a ghost state in ITS OWN variables.
 #
-# Euler conservative: [ρ, ρv₁, ρv₂, E_euler]
-# MHD  conservative: [ρ, ρv₁, ρv₂, ρv₃, E_mhd, B₁, B₂, B₃, ψ]
+# Euler conservative: [ρ, ρv₁, ρv₂, E_euler]          γ_euler = 7/5
+# MHD  conservative: [ρ, ρv₁, ρv₂, ρv₃, E_mhd, B₁, B₂, B₃, ψ]  γ_mhd = 5/3
 #
-# The seed B field has |B|² ~ 1e-16, so |B|²/2 is below machine epsilon relative
-# to E ~ O(1).  The energy difference between Euler and MHD ghosts is negligible
-# and we omit the B²/2 correction to avoid introducing floating-point noise.
+# The interface is a contact discontinuity: ρ_mhd=5, ρ_euler=1 with p continuous.
+# Naively passing the sender's density into the ghost creates a factor-of-5 density
+# mismatch that the Lax-Friedrichs dissipation sees as a constant mass source,
+# draining ρ from the MHD layer near the interface until ρ→0 and the run crashes.
+#
+# Fix: each ghost uses the RECEIVING domain's equilibrium density, with velocity
+# and pressure extracted from the SENDER using its own γ.  This eliminates the
+# spurious LF mass flux while correctly transmitting pressure perturbations.
+#
+# Equilibrium consistency check (ρ_mhd=5, p=1, v=0):
+#   coupling_euler_to_mhd ghost: ρ=5, p=(0.4×2.5)=1, E=1/(2/3)=1.5  ✓
+#   coupling_mhd_to_euler ghost: ρ=1, p=(2/3×1.5)=1, E=1/0.4=2.5    ✓
 ###############################################################################
 
-# Euler state → MHD ghost: attach the seed B field at the coupling interface (y=0).
-# At y=0: B_y = B₀ = 1e-8, B_x = -2B₀·x[1]  (matches initial_condition_mhd at y=0).
+# Background densities — must match the initial conditions.
+const rho_mhd_eq   = 5.0   # metallic H equilibrium density
+const rho_euler_eq = 1.0   # molecular H equilibrium density
+
+# Euler state (γ=7/5) → MHD ghost (γ=5/3):
+# Extract v and p from Euler; rebuild the ghost at MHD equilibrium density.
 coupling_euler_to_mhd = (x, u, equations_other, equations_own) -> begin
-    T  = eltype(u)
-    B0 = convert(T, 1e-8)
-    B1 = -2 * B0 * convert(T, x[1])
-    B2 = B0
-    SVector(u[1], u[2], u[3], zero(T), u[4], B1, B2, zero(T), zero(T))
+    T       = eltype(u)
+    inv_rho = one(T) / max(u[1], eps(T))
+    v1      = u[2] * inv_rho
+    v2      = u[3] * inv_rho
+    KE      = (u[2]^2 + u[3]^2) * inv_rho / 2
+    p       = (equations_other.gamma - 1) * (u[4] - KE)
+    rho_g   = convert(T, rho_mhd_eq)
+    B0      = convert(T, 1e-8)
+    B1      = -2 * B0 * convert(T, x[1])
+    B2      = B0
+    E_mhd   = rho_g * (v1^2 + v2^2) / 2 + p / (equations_own.gamma - 1) +
+              (B1^2 + B2^2) / 2
+    SVector(rho_g, rho_g*v1, rho_g*v2, zero(T), E_mhd, B1, B2, zero(T), zero(T))
 end
 
-# MHD state → Euler ghost: strip magnetic energy and out-of-plane kinetic energy
+# MHD state (γ=5/3) → Euler ghost (γ=7/5):
+# Extract v and p from MHD; rebuild the ghost at Euler equilibrium density.
 coupling_mhd_to_euler = (x, u, equations_other, equations_own) -> begin
+    T         = eltype(u)
+    inv_rho   = one(T) / max(u[1], eps(T))
+    v1        = u[2] * inv_rho
+    v2        = u[3] * inv_rho
+    v3        = u[4] * inv_rho
+    KE_mhd    = (u[2]^2 + u[3]^2 + u[4]^2) * inv_rho / 2
     B_sq_half = (u[6]^2 + u[7]^2 + u[8]^2) / 2
-    v3_KE     = u[4]^2 / (2 * max(u[1], eps(eltype(u))))
-    SVector(u[1], u[2], u[3], u[5] - B_sq_half - v3_KE)
+    p         = (equations_other.gamma - 1) * (u[5] - KE_mhd - B_sq_half)
+    rho_g     = convert(T, rho_euler_eq)
+    E_euler   = rho_g * (v1^2 + v2^2) / 2 + p / (equations_own.gamma - 1)
+    SVector(rho_g, rho_g*v1, rho_g*v2, E_euler)
 end
 
 ###############################################################################
@@ -132,50 +165,6 @@ end
 
 const boundary_condition_slip_wall_mhd = BoundaryConditionSlipWallMHD()
 
-###############################################################################
-# Absorbing ψ boundary condition (MHD physical boundaries only)
-###############################################################################
-
-struct BoundaryConditionAbsorbingPsi{F}
-    boundary_value_function::F
-end
-
-@inline function (bc::BoundaryConditionAbsorbingPsi)(u_inner, orientation_or_normal,
-                                                      direction, x, t,
-                                                      surface_flux_function, equations)
-    u_ref = bc.boundary_value_function(x, t, equations)
-    n = length(u_inner)
-    u_boundary = SVector(ntuple(Val(n)) do i
-        i < n ? u_ref[i] : u_inner[n]
-    end)
-    if iseven(direction)
-        return surface_flux_function(u_inner, u_boundary, orientation_or_normal, equations)
-    else
-        return surface_flux_function(u_boundary, u_inner, orientation_or_normal, equations)
-    end
-end
-
-@inline function (bc::BoundaryConditionAbsorbingPsi)(u_inner, orientation_or_normal,
-                                                      direction, x, t,
-                                                      surface_flux_functions::Tuple,
-                                                      equations)
-    surface_flux_function, nonconservative_flux_function = surface_flux_functions
-    u_ref = bc.boundary_value_function(x, t, equations)
-    n = length(u_inner)
-    u_boundary = SVector(ntuple(Val(n)) do i
-        i < n ? u_ref[i] : u_inner[n]
-    end)
-    if iseven(direction)
-        flux_val     = surface_flux_function(u_inner, u_boundary, orientation_or_normal, equations)
-        noncons_flux = nonconservative_flux_function(u_inner, u_boundary,
-                                                     orientation_or_normal, equations)
-    else
-        flux_val     = surface_flux_function(u_boundary, u_inner, orientation_or_normal, equations)
-        noncons_flux = nonconservative_flux_function(u_inner, u_boundary,
-                                                     orientation_or_normal, equations)
-    end
-    return flux_val, noncons_flux
-end
 
 ###############################################################################
 # Stochastic small-scale turbulent body-force driver (Euler domain only).
@@ -264,16 +253,32 @@ mesh_top    = StructuredMeshView(parent_mesh; indices_min = (1, 51), indices_max
 # Equations and solvers
 ###############################################################################
 
-equations_mhd   = IdealGlmMhdEquations2D(5 / 3, initial_c_h = 1.0)
-equations_euler = CompressibleEulerEquations2D(5 / 3)
+equations_mhd   = IdealGlmMhdEquations2D(5 / 3, initial_c_h = 1.0)   # metallic H: γ=5/3
+equations_euler = CompressibleEulerEquations2D(7 / 5)                  # molecular H: γ=7/5=1.4
 
 solver_mhd = DGSEM(polydeg = 3,
                    surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
                    volume_integral = VolumeIntegralFluxDifferencing(
                        (flux_hindenlang_gassner, flux_nonconservative_powell)))
 
-solver_euler = DGSEM(polydeg = 3, surface_flux = flux_lax_friedrichs,
-                     volume_integral = VolumeIntegralFluxDifferencing(flux_ranocha))
+# Shock-capturing for the Euler (molecular) domain.
+# Without explicit viscosity, the turbulent cascade transfers kinetic energy to
+# progressively smaller scales until grid-scale Gibbs oscillations drive p or ρ
+# negative → NaN.  The Hennemann-Gassner indicator detects cells where the
+# solution is under-resolved and blends the DG scheme toward a first-order FV
+# scheme there, adding just enough numerical dissipation to prevent NaN without
+# over-dissipating smooth regions.  This is more robust than simply increasing
+# resolution, because ideal Euler will always eventually cascade to grid scale.
+basis_euler     = LobattoLegendreBasis(3)
+indicator_euler = IndicatorHennemannGassner(equations_euler, basis_euler;
+                                            alpha_max    = 0.5,
+                                            alpha_min    = 0.001,
+                                            alpha_smooth = false,  # smoothing not implemented for StructuredMeshView
+                                            variable     = density_pressure)
+solver_euler    = DGSEM(basis_euler, flux_lax_friedrichs,
+                        VolumeIntegralShockCapturingHG(indicator_euler;
+                                                       volume_flux_dg = flux_ranocha,
+                                                       volume_flux_fv = flux_lax_friedrichs))
 
 ###############################################################################
 # Semidiscretizations
@@ -324,7 +329,7 @@ semi = SemidiscretizationCoupled(semi_bottom, semi_top)
 # ODE solvers, callbacks
 ###############################################################################
 
-tspan = (0.0, 1.0)
+tspan = (0.0, 72.0)
 ode   = semidiscretize(semi, tspan)
 
 summary_callback = SummaryCallback()
