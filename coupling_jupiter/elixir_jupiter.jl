@@ -108,7 +108,6 @@ coupling_mhd_to_euler = (x, u, equations_other, equations_own) -> begin
     inv_rho   = one(T) / max(u[1], eps(T))
     v1        = u[2] * inv_rho
     v2        = u[3] * inv_rho
-    v3        = u[4] * inv_rho
     KE_mhd    = (u[2]^2 + u[3]^2 + u[4]^2) * inv_rho / 2
     B_sq_half = (u[6]^2 + u[7]^2 + u[8]^2) / 2
     p         = (equations_other.gamma - 1) * (u[5] - KE_mhd - B_sq_half)
@@ -164,7 +163,6 @@ end
 end
 
 const boundary_condition_slip_wall_mhd = BoundaryConditionSlipWallMHD()
-
 
 ###############################################################################
 # Stochastic small-scale turbulent body-force driver (Euler domain only).
@@ -226,7 +224,7 @@ turbulent_forcing = TurbulentForcing(A = 1e-2, N = 16, kmin = 4, kmax = 10,
 ###############################################################################
 
 function source_terms_glm_damping(u, x, t, equations::IdealGlmMhdEquations2D)
-    L    = 0.5f0
+    L    = 0.5
     nv   = nvariables(equations)
     rate = equations.c_h / L
     return SVector(ntuple(Val(nv)) do i
@@ -284,18 +282,17 @@ solver_euler    = DGSEM(basis_euler, flux_lax_friedrichs,
 # Semidiscretizations
 ###############################################################################
 
-# Identity coupling functions for periodic x boundaries (self-coupling)
-coupling_identity_mhd   = (x, u, equations_other, equations_own) -> u
-coupling_identity_euler = (x, u, equations_other, equations_own) -> u
+# Identity coupling function for periodic x boundaries (self-coupling)
+coupling_identity = (x, u, equations_other, equations_own) -> u
 
 # Bottom (MHD / metallic): periodic in x via self-coupling, slip wall at y_neg,
 # coupled to Euler at y_pos.
 # x_neg receives from own x_pos (semi index 1, :end in i) and vice versa.
 boundary_conditions_bottom = (
     x_neg = BoundaryConditionCoupled(1, (:end,   :i_forward), Float64,
-                                     coupling_identity_mhd),
+                                     coupling_identity),
     x_pos = BoundaryConditionCoupled(1, (:begin, :i_forward), Float64,
-                                     coupling_identity_mhd),
+                                     coupling_identity),
     y_neg = boundary_condition_slip_wall_mhd,
     y_pos = BoundaryConditionCoupled(2, (:i_forward, :begin), Float64,
                                      coupling_euler_to_mhd),
@@ -310,9 +307,9 @@ semi_bottom = SemidiscretizationHyperbolic(mesh_bottom, equations_mhd,
 # coupled to MHD at y_neg.
 boundary_conditions_top = (
     x_neg = BoundaryConditionCoupled(2, (:end,   :i_forward), Float64,
-                                     coupling_identity_euler),
+                                     coupling_identity),
     x_pos = BoundaryConditionCoupled(2, (:begin, :i_forward), Float64,
-                                     coupling_identity_euler),
+                                     coupling_identity),
     y_neg = BoundaryConditionCoupled(1, (:i_forward, :end), Float64,
                                      coupling_mhd_to_euler),
     y_pos = boundary_condition_slip_wall,
@@ -352,8 +349,8 @@ glm_speed_callback = GlmSpeedCallback(glm_scale = 0.5, cfl = 0.5, semi_indices =
 forcing_callback = DiscreteCallback(
     (u, t, integrator) -> t >= turbulent_forcing.t_next,
     integrator -> begin
-        n = length(turbulent_forcing.phases)
-        turbulent_forcing.phases .= rand(turbulent_forcing.rng, n) .* 2π
+        turbulent_forcing.phases .= rand(turbulent_forcing.rng,
+                                         length(turbulent_forcing.phases)) .* 2π
         turbulent_forcing.t_next  = integrator.t + turbulent_forcing.tau_corr
     end;
     save_positions = (false, false),
