@@ -236,16 +236,16 @@ end
 # Mesh: 100×100 parent, split 50/50 at y=0
 ###############################################################################
 
-cells_per_dimension_parent = (100, 100)
+cells_per_dimension_parent = (200, 200)
 coordinates_min = (-0.5, -0.5)
 coordinates_max = ( 0.5,  0.5)
 parent_mesh = StructuredMesh(cells_per_dimension_parent, coordinates_min, coordinates_max,
                              periodicity = (false, false))
 
 # Bottom half: metallic hydrogen (MHD, semi 1)
-mesh_bottom = StructuredMeshView(parent_mesh; indices_min = (1,  1), indices_max = (100,  50))
+mesh_bottom = StructuredMeshView(parent_mesh; indices_min = (1,   1), indices_max = (200, 100))
 # Top half:    molecular hydrogen (Euler, semi 2)
-mesh_top    = StructuredMeshView(parent_mesh; indices_min = (1, 51), indices_max = (100, 100))
+mesh_top    = StructuredMeshView(parent_mesh; indices_min = (1, 101), indices_max = (200, 200))
 
 ###############################################################################
 # Equations and solvers
@@ -326,7 +326,7 @@ semi = SemidiscretizationCoupled(semi_bottom, semi_top)
 # ODE solvers, callbacks
 ###############################################################################
 
-tspan = (0.0, 72.0)
+tspan = (0.0, 144.0)
 ode   = semidiscretize(semi, tspan)
 
 summary_callback = SummaryCallback()
@@ -334,7 +334,7 @@ summary_callback = SummaryCallback()
 analysis_interval = 1000
 alive_callback    = AliveCallback(analysis_interval = analysis_interval)
 
-save_solution = SaveSolutionCallback(interval = 100,
+save_solution = SaveSolutionCallback(dt = 0.1,
                                      save_initial_solution = true,
                                      save_final_solution   = true,
                                      output_directory      = "out",
