@@ -28,7 +28,7 @@ function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
     rho = 1.0
     v1 = 0.0; v2 = 0.0; v3 = 0.0
     p   = 1.0
-    B1  = 0.0; B2 = 1.0; B3 = 0.0  # vertical guide field
+    B1  = 0.0; B2 = 0.0; B3 = 0.0
     psi = 0.0
     return prim2cons(SVector(rho, v1, v2, v3, p, B1, B2, B3, psi), equations)
 end
