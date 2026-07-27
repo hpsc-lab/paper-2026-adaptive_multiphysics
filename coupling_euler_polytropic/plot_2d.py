@@ -37,7 +37,7 @@ def perform_interpolation(field):
 
 # Define the time index to plot.
 t_idx = 0
-#t_idx = 125
+# t_idx = 125
 
 # Read the mesh files.
 f = h5py.File('out/mesh_1_000000000.h5')
@@ -84,7 +84,7 @@ fig = plt.figure(figsize=(width, height))
 ax = fig.add_subplot(111)
 plt.ion()
 
-plt.imshow(rho.T, origin='lower', extent=[-2, 2, -1, 1])
+plt.imshow(rho.T, origin='lower', extent=[-2, 2, -1, 1], vmin=0.993, vmax=1.007)
 
 # Improve plot quality.
 plt.tick_params(axis='both', which='major', length=8, labelsize=20)

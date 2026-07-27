@@ -36,8 +36,8 @@ def perform_interpolation(field):
 
 
 # Define the time index to plot
-#t_idx = 0
-t_idx = 150
+t_idx = 0
+# t_idx = 150
 
 rho = np.zeros([48*4, 48*4])
 
@@ -69,13 +69,14 @@ ax = fig.add_subplot(111)
 plt.ion()
 
 # Plot the density.
-im = plt.imshow(rho.T, origin='lower', extent=[-1.5, 1.5, -1.5, 1.5])
+im = plt.imshow(rho.T, origin='lower', extent=[-1.5, 1.5, -1.5, 1.5],
+                vmin=0.99, vmax=1.01)
 
 # Plot boundaries.
-plt.plot([-1.5, 1.5], [-0.5, -0.5], color='k', linewidth=2)
-plt.plot([-1.5, 1.5], [0.5, 0.5], color='k', linewidth=2)
-plt.plot([-0.5, -0.5], [-1.5, 1.5], color='k', linewidth=2)
-plt.plot([0.5, 0.5], [-1.5, 1.5], color='k', linewidth=2)
+plt.plot([-1.5, 1.5], [-0.5, -0.5], color='k', linestyle=':', linewidth=2)
+plt.plot([-1.5, 1.5], [0.5, 0.5], color='k', linestyle=':', linewidth=2)
+plt.plot([-0.5, -0.5], [-1.5, 1.5], color='k', linestyle=':', linewidth=2)
+plt.plot([0.5, 0.5], [-1.5, 1.5], color='k', linestyle=':', linewidth=2)
 
 # Improve plot quality.
 plt.tick_params(axis='both', which='major', length=8, labelsize=20)
