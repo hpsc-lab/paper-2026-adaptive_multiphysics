@@ -3,46 +3,51 @@ using Trixi
 using Random
 
 ###############################################################################
-# Jupiter dynamo-boundary coupled simulation
+# Jupiter metallic/molecular hydrogen interface — coupled MHD–Euler simulation
 # Bottom domain: IdealGlmMhdEquations2D    (metallic hydrogen interior, conducting)
 # Top domain:    CompressibleEulerEquations2D (molecular hydrogen envelope, neutral)
 #
 # At ~0.85 R_J the hydrogen pressure-ionises and becomes electrically conducting.
-# Below this "dynamo boundary" the fluid couples to the magnetic field (MHD);
-# above it the gas is neutral and magnetic effects vanish (Euler).
+# Below this transition the fluid couples to the magnetic field (MHD); above it
+# the gas is neutral and magnetic effects vanish (Euler).
 #
 # A multi-mode turbulent body force continuously stirs the molecular envelope,
 # mimicking solar irradiation and large-scale convective overturning.  The driven
-# acoustic and vortical motions reach the dynamo boundary and partially couple
-# into fast-magnetosonic and Alfvén waves in the conducting interior.  The MHD
-# domain starts at rest; all wave activity originates in the neutral layer above.
+# acoustic and vortical motions reach the transition layer and couple across the
+# interface: pressure and velocity are transmitted, giving rise to fast-magnetosonic
+# and Alfvén waves in the conducting interior.  The acoustic impedance mismatch
+# (Z_mhd ≈ 2.89, Z_euler ≈ 1.18, reflection coefficient ≈ 0.42) means the
+# interface partially reflects and partially transmits wave energy.
 #
 # Physical parameters (normalised units):
 #   Metallic H (MHD):    ρ=5, p=1, γ=5/3, c_s = √(γp/ρ) = √(1/3) ≈ 0.577
-#                        B field: weak seed field (B₀=1e-8), divergence-free,
-#                        linear profile satisfying the perfect-conductor BC at y=-0.5:
-#                          B_y = 2B₀(y+0.5)  →  0 at wall, B₀ at interface
-#                          B_x = -2B₀·x      →  exactly cancels ∂B_y/∂y
+#                        Ambient B field: uniform vertical B₀=0.2 (B₁=0, B₂=B₀)
+#                        Alfvén speed v_A = B₀/√ρ ≈ 0.089 ≈ 15 % of c_s
+#                        Plasma beta β = 2p/B₀² = 50
 #   Molecular H (Euler): ρ=1, p=1, γ=7/5, c_s = √(γp/ρ) = √(1.4) ≈ 1.18
 #
 # Density ratio ρ_metallic/ρ_molecular ≈ 5, consistent with interior models
-# (Guillot 1999; Militzer et al. 2022) at the ~0.85 R_J dynamo boundary.
+# (Guillot 1999; Militzer et al. 2022) at the ~0.85 R_J transition layer.
 # Both layers start at p=1 with v=0, so the equilibrium flux is zero despite
 # the density jump (flux depends on p and v, not ρ, at rest).
-# The seed B field is so weak (B₀=1e-8) that |B|²/2 < machine-ε relative to
-# the O(1) energy, so the equilibrium energy balance is unaffected.
 ###############################################################################
+
+# Ambient background field strength (normalised units).
+# Gives Alfvén speed v_A = B0_mhd/√ρ ≈ 0.089 ≈ 15 % of the MHD sound speed.
+# A uniform vertical field (B₁=0, B₂=B₀) is chosen so that the field is
+# x-independent and therefore consistent with the periodic x-boundaries implemented
+# via identity coupling.  A non-uniform field (e.g. B₁=-2B₀x) creates a jump in
+# B₁ at the periodic x-boundaries every timestep, continuously injecting div(B)
+# errors that GLM converts to ψ; since p = (γ-1)(E - KE - B²/2 - ψ²/2), the
+# growing ψ² drains the pressure to zero and crashes the simulation.
+const B0_mhd = 0.2
 
 function initial_condition_mhd(x, t, equations::IdealGlmMhdEquations2D)
     rho = 5.0
     v1  = 0.0; v2 = 0.0; v3 = 0.0
     p   = 1.0
-    # Divergence-free seed field compatible with the perfect-conductor wall at y = -0.5.
-    # Linear B_y profile: 0 at the wall, B₀ at the coupling interface (y = 0).
-    # div(B) = ∂B_x/∂x + ∂B_y/∂y = -2B₀ + 2B₀ = 0  exactly.
-    B0  = 1e-8
-    B1  = -2 * B0 * x[1]           # compensates ∂B_y/∂y to enforce div B = 0
-    B2  =  2 * B0 * (x[2] + 0.5)   # 0 at y=-0.5, B₀ at y=0
+    B1  = 0.0
+    B2  = B0_mhd   # uniform vertical field, periodic in x
     B3  = 0.0
     psi = 0.0
     return prim2cons(SVector(rho, v1, v2, v3, p, B1, B2, B3, psi), equations)
@@ -83,6 +88,15 @@ end
 const rho_mhd_eq   = 5.0   # metallic H equilibrium density
 const rho_euler_eq = 1.0   # molecular H equilibrium density
 
+# Sub-sonic velocity caps for the coupling ghost states.
+# The MHD fast magnetosonic speed at rest is c_f = sqrt(c_s² + v_A²) ≈ 0.584.
+# The Euler sound speed at rest is c_s ≈ 1.18.  Velocities transmitted through
+# the coupling are capped to a fraction of the receiver's characteristic speed to
+# prevent a supersonic Euler disturbance from driving a supersonic MHD ghost (or
+# vice versa), which would bypass the shock-capturing limiter and corrupt cells.
+const v_cap_mhd   = 0.5 * sqrt(5/3 / 5 + (B0_mhd / sqrt(5.0))^2)   # 0.5 × c_f_mhd ≈ 0.29
+const v_cap_euler = 0.5 * sqrt(7/5 / 1.0)                             # 0.5 × c_s_euler ≈ 0.59
+
 # Euler state (γ=7/5) → MHD ghost (γ=5/3):
 # Extract v and p from Euler; rebuild the ghost at MHD equilibrium density.
 coupling_euler_to_mhd = (x, u, equations_other, equations_own) -> begin
@@ -90,14 +104,20 @@ coupling_euler_to_mhd = (x, u, equations_other, equations_own) -> begin
     inv_rho = one(T) / max(u[1], eps(T))
     v1      = u[2] * inv_rho
     v2      = u[3] * inv_rho
-    KE      = (u[2]^2 + u[3]^2) * inv_rho / 2
-    p       = (equations_other.gamma - 1) * (u[4] - KE)
+    # Clamp velocity magnitude to stay sub-fast-magnetosonic in the MHD receiver.
+    v_mag   = sqrt(v1^2 + v2^2)
+    v_cap   = convert(T, v_cap_mhd)
+    if v_mag > v_cap
+        fac = v_cap / v_mag
+        v1 *= fac
+        v2 *= fac
+    end
+    KE      = (v1^2 + v2^2) / 2
+    p       = max((equations_other.gamma - 1) * (u[4] - (u[2]^2 + u[3]^2) * inv_rho / 2), eps(T))
     rho_g   = convert(T, rho_mhd_eq)
-    B0      = convert(T, 1e-8)
-    B1      = -2 * B0 * convert(T, x[1])
-    B2      = B0
-    E_mhd   = rho_g * (v1^2 + v2^2) / 2 + p / (equations_own.gamma - 1) +
-              (B1^2 + B2^2) / 2
+    B1      = zero(T)
+    B2      = convert(T, B0_mhd)
+    E_mhd   = rho_g * KE + p / (equations_own.gamma - 1) + (B1^2 + B2^2) / 2
     SVector(rho_g, rho_g*v1, rho_g*v2, zero(T), E_mhd, B1, B2, zero(T), zero(T))
 end
 
@@ -108,9 +128,17 @@ coupling_mhd_to_euler = (x, u, equations_other, equations_own) -> begin
     inv_rho   = one(T) / max(u[1], eps(T))
     v1        = u[2] * inv_rho
     v2        = u[3] * inv_rho
+    # Clamp velocity magnitude to stay sub-sonic in the Euler receiver.
+    v_mag     = sqrt(v1^2 + v2^2)
+    v_cap     = convert(T, v_cap_euler)
+    if v_mag > v_cap
+        fac = v_cap / v_mag
+        v1 *= fac
+        v2 *= fac
+    end
     KE_mhd    = (u[2]^2 + u[3]^2 + u[4]^2) * inv_rho / 2
     B_sq_half = (u[6]^2 + u[7]^2 + u[8]^2) / 2
-    p         = (equations_other.gamma - 1) * (u[5] - KE_mhd - B_sq_half)
+    p         = max((equations_other.gamma - 1) * (u[5] - KE_mhd - B_sq_half), eps(T))
     rho_g     = convert(T, rho_euler_eq)
     E_euler   = rho_g * (v1^2 + v2^2) / 2 + p / (equations_own.gamma - 1)
     SVector(rho_g, rho_g*v1, rho_g*v2, E_euler)
@@ -224,7 +252,7 @@ turbulent_forcing = TurbulentForcing(A = 1e-2, N = 16, kmin = 4, kmax = 10,
 ###############################################################################
 
 function source_terms_glm_damping(u, x, t, equations::IdealGlmMhdEquations2D)
-    L    = 0.5
+    L    = 0.1   # shorter length scale → faster ψ damping, keeps ψ² small
     nv   = nvariables(equations)
     rate = equations.c_h / L
     return SVector(ntuple(Val(nv)) do i
@@ -236,16 +264,16 @@ end
 # Mesh: 100×100 parent, split 50/50 at y=0
 ###############################################################################
 
-cells_per_dimension_parent = (200, 200)
+cells_per_dimension_parent = (100, 100)
 coordinates_min = (-0.5, -0.5)
 coordinates_max = ( 0.5,  0.5)
 parent_mesh = StructuredMesh(cells_per_dimension_parent, coordinates_min, coordinates_max,
                              periodicity = (false, false))
 
 # Bottom half: metallic hydrogen (MHD, semi 1)
-mesh_bottom = StructuredMeshView(parent_mesh; indices_min = (1,   1), indices_max = (200, 100))
+mesh_bottom = StructuredMeshView(parent_mesh; indices_min = (1,  1), indices_max = (100, 50))
 # Top half:    molecular hydrogen (Euler, semi 2)
-mesh_top    = StructuredMeshView(parent_mesh; indices_min = (1, 101), indices_max = (200, 200))
+mesh_top    = StructuredMeshView(parent_mesh; indices_min = (1, 51), indices_max = (100, 100))
 
 ###############################################################################
 # Equations and solvers
@@ -254,10 +282,24 @@ mesh_top    = StructuredMeshView(parent_mesh; indices_min = (1, 101), indices_ma
 equations_mhd   = IdealGlmMhdEquations2D(5 / 3, initial_c_h = 1.0)   # metallic H: γ=5/3
 equations_euler = CompressibleEulerEquations2D(7 / 5)                  # molecular H: γ=7/5=1.4
 
-solver_mhd = DGSEM(polydeg = 3,
-                   surface_flux = (flux_lax_friedrichs, flux_nonconservative_powell),
-                   volume_integral = VolumeIntegralFluxDifferencing(
-                       (flux_hindenlang_gassner, flux_nonconservative_powell)))
+# Shock-capturing for the MHD (metallic) domain.
+# With a dynamically significant B field (B₀=0.2, β=50), fast-magnetosonic and
+# Alfvén waves driven by the turbulent Euler domain can steepen into shocks in the
+# MHD layer.  Without limiting, ideal GLM-MHD will crash once gradients reach the
+# grid scale.  The Hennemann-Gassner indicator blends DG→FV in troubled cells.
+basis_mhd      = LobattoLegendreBasis(3)
+indicator_mhd  = IndicatorHennemannGassner(equations_mhd, basis_mhd;
+                                            alpha_max    = 0.5,
+                                            alpha_min    = 0.001,
+                                            alpha_smooth = false,
+                                            variable     = density_pressure)
+solver_mhd     = DGSEM(basis_mhd,
+                        (flux_lax_friedrichs, flux_nonconservative_powell),
+                        VolumeIntegralShockCapturingHG(indicator_mhd;
+                            volume_flux_dg = (flux_hindenlang_gassner,
+                                             flux_nonconservative_powell),
+                            volume_flux_fv = (flux_lax_friedrichs,
+                                             flux_nonconservative_powell)))
 
 # Shock-capturing for the Euler (molecular) domain.
 # Without explicit viscosity, the turbulent cascade transfers kinetic energy to
@@ -340,7 +382,7 @@ save_solution = SaveSolutionCallback(dt = 0.1,
                                      output_directory      = "out",
                                      solution_variables    = cons2prim)
 
-stepsize_callback = StepsizeCallback(cfl = 0.5)
+stepsize_callback = StepsizeCallback(cfl = 0.3)
 
 # GLM speed update only for the MHD (metallic, bottom) domain
 glm_speed_callback = GlmSpeedCallback(glm_scale = 0.5, cfl = 0.5, semi_indices = [1])

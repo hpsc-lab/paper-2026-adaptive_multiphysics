@@ -2055,9 +2055,9 @@ version = "0.1.2"
 
 [[deps.Trixi]]
 deps = ["AcceleratedKernels", "Accessors", "Adapt", "Atomix", "CodeTracking", "ConstructionBase", "DataStructures", "DelimitedFiles", "DiffEqBase", "DiffEqCallbacks", "Downloads", "EllipsisNotation", "FFTW", "FillArrays", "ForwardDiff", "HDF5", "KernelAbstractions", "LinearAlgebra", "LinearMaps", "LoopVectorization", "MPI", "MuladdMacro", "Octavian", "OffsetArrays", "P4est", "Polyester", "PrecompileTools", "Preferences", "Printf", "RecipesBase", "RecursiveArrayTools", "Reexport", "SciMLBase", "SimpleUnPack", "SparseArrays", "StableRNGs", "StartUpDG", "Static", "StaticArrayInterface", "StaticArrays", "StrideArrays", "StructArrays", "SummationByPartsOperators", "T8code", "TimerOutputs", "Triangulate", "TriplotBase", "TriplotRecipes", "TrixiBase", "UUIDs"]
-git-tree-sha1 = "4cfe4e4131edbeaa1557846407a56ac12e72b048"
+path = "/home/simon/codes/Trixi.jl"
 uuid = "a7f1ee26-1774-49b1-8366-f1abc58fbfcb"
-version = "0.16.18"
+version = "0.16.27-DEV"
 
     [deps.Trixi.extensions]
     TrixiAMDGPUExt = "AMDGPU"
